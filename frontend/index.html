@@ -12,10 +12,10 @@
             --ink: #13202c;
             --mute: #627588;
             --line: #d5dde5;
-            --deep: #26346a;
-            --light: #7e91d6;
-            --rem: #b78ad9;
-            --awake: #e8a07c;
+            --deep: #3346b8;
+            --light: #2a9fd6;
+            --rem: #d44f9c;
+            --awake: #eda100;
             --heart: #c4513a;
             --hrv: #2f7f8f;
             --steps: #3a8a6c;
@@ -28,10 +28,10 @@
                 --ink: #e6edf3;
                 --mute: #8b9db0;
                 --line: #26333f;
-                --deep: #6f80d6;
-                --light: #9fb0ec;
-                --rem: #c9a2e6;
-                --awake: #e8a07c;
+                --deep: #6a6cf0;
+                --light: #1aa3b8;
+                --rem: #d55181;
+                --awake: #c98500;
                 --heart: #e8745e;
                 --hrv: #52b3c4;
                 --steps: #5bbb98;
@@ -136,6 +136,7 @@
 
         .stages {
             display: flex;
+            gap: 2px;
             height: 14px;
             border-radius: 7px;
             overflow: hidden;
@@ -251,6 +252,42 @@
         .empty {
             padding: 40px 0;
             color: var(--mute)
+        }
+
+        .tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 10px 0 6px;
+            border-bottom: 1px solid var(--line)
+        }
+
+        .tabs button {
+            border: 0;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            padding: 6px 10px;
+            color: var(--mute)
+        }
+
+        .tabs button:hover {
+            color: var(--ink)
+        }
+
+        .tabs button[aria-pressed="true"] {
+            color: var(--ink);
+            font-weight: 600;
+            border-bottom-color: var(--ink)
+        }
+
+        .tabs span {
+            font-size: .85rem;
+            font-weight: 400;
+            color: var(--mute)
+        }
+
+        section p.more {
+            margin: 10px 0 0
         }
 
         tr[data-run] {
@@ -417,8 +454,8 @@
         const pace = m => { if (!m) return '–'; const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };
         const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
         const barRow = (label, share, value) => `<div class="zone"><span>${label}</span><div><i style="width:${share}%"></i></div><em>${value} · ${num(share)}%</em></div>`;
-        const STALE_MS = 36 * 3600 * 1000;
-        let charts = [], popCharts = [], DAILY = [], ACTS = [];
+        const STALE_MS = 36 * 3600 * 1000, MAX_WORKOUTS = 12;
+        let charts = [], popCharts = [], DAILY = [], ACTS = [], workoutTab = 'all';
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
         function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
@@ -434,6 +471,21 @@
             if (st && st.errors.length) notes.push('Some data could not be synced: ' + st.errors.join(' | '));
             say(notes.join(' '));
             render();
+        }
+
+        const typeKey = a => a.type || 'other';
+        const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
+
+        function workoutsHtml() {
+            const counts = {};
+            ACTS.forEach(a => { counts[typeKey(a)] = (counts[typeKey(a)] || 0) + 1 });
+            const types = Object.keys(counts).sort((x, y) => counts[y] - counts[x] || x.localeCompare(y));
+            if (!counts[workoutTab]) workoutTab = 'all';
+            const tab = (key, label, n) => `<button data-tab="${esc(key)}" aria-pressed="${key === workoutTab}">${esc(label)} <span>${n}</span></button>`;
+            const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', ACTS.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
+            const list = workoutTab === 'all' ? ACTS : ACTS.filter(a => typeKey(a) === workoutTab), shown = list.slice(0, MAX_WORKOUTS);
+            const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}.</p>` : '';
+            return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
         }
 
         function render() {
@@ -461,7 +513,7 @@
   <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
   <section><h3>Stress and body battery</h3><p>Average stress (0–100) and how much body battery you gained and used each day.</p><div class="chart"><canvas id="c4"></canvas></div></section>
   <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>
-  <section><h3>Recent workouts</h3><div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${ACTS.slice(0, 12).map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div></section>`;
+  <section id="workouts">${workoutsHtml()}</section>`;
 
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
@@ -561,7 +613,12 @@
         $('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = [] };
         $('#pop').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
         $('#app').onclick = e => {
-            const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]');
+            const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
+            if (tab) {
+                workoutTab = tab.dataset.tab;
+                $('#workouts').innerHTML = workoutsHtml();
+                [...document.querySelectorAll('[data-tab]')].find(b => b.dataset.tab === workoutTab).focus();
+            }
             if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run));
             if (s) openStress(s.dataset.stress).catch(err => say(err.message));
         };
