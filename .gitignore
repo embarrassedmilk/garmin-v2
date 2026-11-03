@@ -1,0 +1,14 @@
+# Secrets
+.env
+
+# Health data
+data/
+raw_dumps/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

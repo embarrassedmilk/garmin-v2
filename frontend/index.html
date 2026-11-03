@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Garmin dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #f2f5f8;
+            --ink: #13202c;
+            --mute: #627588;
+            --line: #d5dde5;
+            --deep: #26346a;
+            --light: #7e91d6;
+            --rem: #b78ad9;
+            --awake: #e8a07c;
+            --heart: #c4513a;
+            --hrv: #2f7f8f;
+            --steps: #3a8a6c;
+            --warn: #b5402a
+        }
+
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #0f1720;
+                --ink: #e6edf3;
+                --mute: #8b9db0;
+                --line: #26333f;
+                --deep: #6f80d6;
+                --light: #9fb0ec;
+                --rem: #c9a2e6;
+                --awake: #e8a07c;
+                --heart: #e8745e;
+                --hrv: #52b3c4;
+                --steps: #5bbb98;
+                --warn: #f08a74
+            }
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 16px/1.5 "Avenir Next", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif
+        }
+
+        main {
+            max-width: 1040px;
+            margin: 0 auto;
+            padding: 28px 20px 64px
+        }
+
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px 24px;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 28px
+        }
+
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 650;
+            margin: 0
+        }
+
+        .bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            color: var(--mute);
+            font-size: .9rem
+        }
+
+        button,
+        select {
+            font: inherit;
+            color: var(--ink);
+            background: transparent;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer
+        }
+
+        button:hover {
+            border-color: var(--mute)
+        }
+
+        button:focus-visible,
+        select:focus-visible {
+            outline: 2px solid var(--light);
+            outline-offset: 2px
+        }
+
+        button:disabled {
+            opacity: .5;
+            cursor: wait
+        }
+
+        .hero {
+            padding-bottom: 22px;
+            border-bottom: 1px solid var(--line)
+        }
+
+        .hero h2 {
+            font-size: .95rem;
+            font-weight: 600;
+            color: var(--mute);
+            margin: 0 0 6px
+        }
+
+        .big {
+            display: flex;
+            align-items: baseline;
+            gap: 14px;
+            flex-wrap: wrap
+        }
+
+        .big b {
+            font-size: 3.4rem;
+            font-weight: 650;
+            line-height: 1
+        }
+
+        .big span {
+            color: var(--mute)
+        }
+
+        .stages {
+            display: flex;
+            height: 14px;
+            border-radius: 7px;
+            overflow: hidden;
+            margin: 14px 0 8px;
+            background: var(--line)
+        }
+
+        .stages i {
+            display: block;
+            height: 100%
+        }
+
+        .legend {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+            color: var(--mute);
+            font-size: .85rem
+        }
+
+        .legend u {
+            text-decoration: none;
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            border-bottom: 1px solid var(--line)
+        }
+
+        .stat {
+            padding: 16px 16px 16px 0
+        }
+
+        .stat+.stat {
+            padding-left: 16px;
+            border-left: 1px solid var(--line)
+        }
+
+        .stat small {
+            display: block;
+            color: var(--mute);
+            font-size: .85rem
+        }
+
+        .stat b {
+            font-size: 1.6rem;
+            font-weight: 600
+        }
+
+        .stat em {
+            font-style: normal;
+            color: var(--mute);
+            font-size: .85rem;
+            margin-left: 4px
+        }
+
+        section {
+            padding: 26px 0;
+            border-bottom: 1px solid var(--line)
+        }
+
+        section h3 {
+            margin: 0 0 2px;
+            font-size: 1.05rem
+        }
+
+        section p {
+            margin: 0 0 12px;
+            color: var(--mute);
+            font-size: .88rem
+        }
+
+        .chart {
+            position: relative;
+            height: 220px
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .92rem
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 8px 10px 8px 0;
+            border-bottom: 1px solid var(--line);
+            white-space: nowrap
+        }
+
+        th {
+            color: var(--mute);
+            font-weight: 500
+        }
+
+        .wrap {
+            overflow-x: auto
+        }
+
+        #msg {
+            color: var(--warn);
+            font-size: .9rem;
+            margin: 0 0 16px
+        }
+
+        .empty {
+            padding: 40px 0;
+            color: var(--mute)
+        }
+    </style>
+</head>
+
+<body>
+    <main>
+        <header>
+            <h1>Garmin dashboard</h1>
+            <div class="bar">
+                <span id="synced">Not synced yet</span>
+                <select id="range" aria-label="Date range">
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="28" selected>Last 28 days</option>
+                </select>
+                <button id="export" title="Download a compact JSON summary to attach to an AI chat">Export for
+                    Claude</button>
+                <button id="sync">Sync now</button>
+            </div>
+        </header>
+        <p id="msg" role="status" hidden></p>
+        <div id="app"></div>
+    </main>
+    <script>
+        const $ = s => document.querySelector(s), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+        const hm = s => s == null ? '–' : `${Math.floor(s / 3600)}h ${String(Math.round(s % 3600 / 60)).padStart(2, '0')}m`;
+        const num = (v, d = 0) => v == null ? '–' : Number(v).toFixed(d);
+        const day = d => new Date(d + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        let charts = [], DAILY = [], ACTS = [];
+
+        async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
+        function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
+
+        async function load() {
+            const days = +$('#range').value;
+            [DAILY, ACTS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities?limit=200')]);
+            const st = await api('/api/status');
+            $('#synced').textContent = st ? 'Synced ' + new Date(st.synced_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not synced yet';
+            if (st && st.errors.length) say('Some data could not be synced: ' + st.errors.join(' | '));
+            render();
+        }
+
+        function render() {
+            charts.forEach(c => c.destroy()); charts = [];
+            const app = $('#app');
+            if (!DAILY.length) { app.innerHTML = '<div class="empty">No data yet. Select <b>Sync now</b> to load the last 28 days from Garmin.</div>'; return }
+            const L = [...DAILY].reverse(), last = k => (L.find(r => r[k] != null) || {})[k];
+            const sl = L.find(r => r.sleep_s != null) || {}, tot = (sl.deep_s || 0) + (sl.light_s || 0) + (sl.rem_s || 0) + (sl.awake_s || 0) || 1;
+            const seg = (k, c) => `<i style="width:${(sl[k] || 0) / tot * 100}%;background:var(${c})"></i>`;
+            const t = L[0];
+            app.innerHTML = `
+  <div class="hero"><h2>Sleep, night ending ${sl.date ? day(sl.date) : '–'}</h2>
+    <div class="big"><b>${hm(sl.sleep_s)}</b><span>Garmin sleep score ${num(sl.sleep_score)}</span></div>
+    <div class="stages" role="img" aria-label="Sleep stages">${seg('deep_s', '--deep')}${seg('light_s', '--light')}${seg('rem_s', '--rem')}${seg('awake_s', '--awake')}</div>
+    <div class="legend"><span><u style="background:var(--deep)"></u>Deep ${hm(sl.deep_s)}</span><span><u style="background:var(--light)"></u>Light ${hm(sl.light_s)}</span><span><u style="background:var(--rem)"></u>REM ${hm(sl.rem_s)}</span><span><u style="background:var(--awake)"></u>Awake ${hm(sl.awake_s)}</span></div></div>
+  <div class="stats">
+    <div class="stat"><small>Resting heart rate</small><b>${num(last('rhr'))}</b><em>bpm</em></div>
+    <div class="stat"><small>HRV last night</small><b>${num(last('hrv_last_night'))}</b><em>ms</em></div>
+    <div class="stat"><small>Steps ${day(t.date)}</small><b>${num(t.steps).replace(/\B(?=(\d{3})+$)/g, ',')}</b><em>/ ${num(t.step_goal)}</em></div>
+    <div class="stat"><small>Average stress</small><b>${num(t.stress_avg ?? last('stress_avg'))}</b><em>/ 100</em></div>
+    <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
+  </div>
+  <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
+  <section><h3>Resting heart rate and HRV</h3><p>Nightly HRV average and daily resting heart rate. Look for changes against your own normal, not single days.</p><div class="chart"><canvas id="c2"></canvas></div></section>
+  <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
+  <section><h3>Stress and body battery</h3><p>Average stress (0–100) and how much body battery you gained and used each day.</p><div class="chart"><canvas id="c4"></canvas></div></section>
+  <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>
+  <section><h3>Recent workouts</h3><div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${ACTS.slice(0, 12).map(a => `<tr><td>${day(a.start_local.slice(0, 10))}</td><td>${a.name || a.type}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div></section>`;
+
+            Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+            const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
+            const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } } } };
+            const mk = (id, type, datasets, scales) => charts.push(new Chart($('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
+            const ln = (label, k, c, extra = {}) => ({ type: 'line', label, data: DAILY.map(r => r[k]), borderColor: css(c), backgroundColor: css(c), tension: .25, pointRadius: 2, spanGaps: true, ...extra });
+            const bar = (label, data, c, extra = {}) => ({ type: 'bar', label, data, backgroundColor: css(c), ...extra });
+            mk('c1', 'bar', [bar('Deep', h('deep_s'), '--deep', { stack: 's' }), bar('Light', h('light_s'), '--light', { stack: 's' }), bar('REM', h('rem_s'), '--rem', { stack: 's' }), bar('Awake', h('awake_s'), '--awake', { stack: 's' }), ln('Sleep score', 'sleep_score', '--ink', { yAxisID: 'y1' })],
+                { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'hours' } }, y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: 'score' } } });
+            mk('c2', 'line', [ln('Resting HR (bpm)', 'rhr', '--heart'), ln('HRV (ms)', 'hrv_last_night', '--hrv', { yAxisID: 'y1' })], { y: { title: { display: true, text: 'bpm' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'ms' } } });
+            mk('c3', 'bar', [bar('Steps', DAILY.map(r => r.steps), '--steps'), ln('Goal', 'step_goal', '--mute', { borderDash: [5, 4], pointRadius: 0 })], { y: { beginAtZero: true } });
+            mk('c4', 'bar', [bar('Battery gained', DAILY.map(r => r.bb_charged), '--steps'), bar('Battery used', DAILY.map(r => r.bb_drained), '--awake'), ln('Avg stress', 'stress_avg', '--heart', { yAxisID: 'y1' })], { y: { beginAtZero: true, title: { display: true, text: 'body battery' } }, y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: 'stress' } } });
+            const load = {}; ACTS.forEach(a => { const d = a.start_local.slice(0, 10); load[d] = (load[d] || 0) + (a.training_load || 0) });
+            mk('c5', 'bar', [bar('Training load', DAILY.map(r => load[r.date] ?? 0), '--deep')], { y: { beginAtZero: true } });
+        }
+
+        $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
+        $('#range').onchange = () => load().catch(e => say(e.message));
+        $('#sync').onclick = async e => {
+            const b = e.target; b.disabled = true; b.textContent = 'Syncing…'; say('');
+            try { const r = await api('/api/sync', { method: 'POST' }); if (r.errors.length) say('Some data could not be synced: ' + r.errors.join(' | ')); await load() }
+            catch (err) { say('Sync failed: ' + err.message) } finally { b.disabled = false; b.textContent = 'Sync now' }
+        };
+        load().catch(e => say(e.message));
+    </script>
+</body>
+
+</html>
