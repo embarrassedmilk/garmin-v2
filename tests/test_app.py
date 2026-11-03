@@ -32,8 +32,10 @@ class TempDbCase(unittest.TestCase):
 
     def seed(self):
         c = db.connect()
-        db.upsert(c, "daily", "date", {"date": YESTERDAY, "steps": 1000, "sleep_s": 25000})
-        db.upsert(c, "daily", "date", {"date": TODAY.isoformat(), "steps": 50})
+        db.upsert(c, "daily", "date", {
+            "date": YESTERDAY, "steps": 1000, "sleep_s": 25000, "summary_fetched_on": TODAY.isoformat(),
+        })
+        db.upsert(c, "daily", "date", {"date": TODAY.isoformat(), "steps": 50, "summary_fetched_on": TODAY.isoformat()})
         db.upsert(c, "activities", "id", {
             "id": 1, "start_local": f"{YESTERDAY} 07:00:00", "type": "running",
             "name": PRIVATE_NAME, "duration_s": 1800, "training_load": 40,
@@ -81,8 +83,32 @@ class SyncTest(TempDbCase):
         self.assertEqual(result["counts"]["daily_summaries"], 1)
         c = db.connect()
         self.addCleanup(c.close)
-        rows = c.execute("SELECT date, steps FROM daily").fetchall()
-        self.assertEqual([tuple(r) for r in rows], [(YESTERDAY, 123)])
+        rows = c.execute("SELECT date, steps, summary_fetched_on FROM daily").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [(YESTERDAY, 123, TODAY.isoformat())])
+
+    def test_failing_old_window_does_not_block_newer_data(self):
+        def summaries(start, end):
+            if end < TODAY:
+                raise RuntimeError("old window failed")
+            return {"data": [{"calendarDate": YESTERDAY}]}
+
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get_daily_summaries.side_effect = summaries
+        client.get_daily_sleep_summaries.return_value = []
+        client.get_daily_hrv_summaries.return_value = {}
+        client.search_activities.return_value = []
+
+        with patch.object(sync, "PersonalApiAuthenticator", MagicMock()), \
+                patch.object(sync, "GarminPersonalApiClient", return_value=client), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            result = sync.run_sync(days=60)
+
+        first_call_end = client.get_daily_summaries.call_args_list[0].args[1]
+        self.assertEqual(first_call_end, TODAY)
+        self.assertEqual(result["counts"]["daily_summaries"], 1)
+        self.assertEqual(len(result["errors"]), 2)  # 60 days is 3 windows; both older ones failed
+        self.assertIn("daily_summaries", result["errors"][0])
 
 
 class ExportTest(TempDbCase):
@@ -100,6 +126,30 @@ class ExportTest(TempDbCase):
         self.assertEqual(partial, {YESTERDAY: False, TODAY.isoformat(): True})
         self.assertEqual(export["stats"]["steps"]["n"], 1)
         self.assertEqual(export["stats"]["steps"]["mean"], 1000)
+
+    def test_day_fetched_before_it_ended_stays_partial(self):
+        c = db.connect()
+        db.upsert(c, "daily", "date", {"date": YESTERDAY, "steps": 300, "summary_fetched_on": YESTERDAY})
+        c.commit()
+        c.close()
+        export = build_export(28)
+        self.assertTrue(export["daily"][0]["partial"])
+        self.assertEqual(export["stats"]["steps"]["n"], 0)
+
+    def test_last_nights_sleep_and_hrv_count_but_todays_steps_do_not(self):
+        c = db.connect()
+        db.upsert(c, "daily", "date", {"date": YESTERDAY, "steps": 1000, "sleep_s": 3600, "hrv_last_night": 40,
+                                       "summary_fetched_on": TODAY.isoformat()})
+        db.upsert(c, "daily", "date", {"date": TODAY.isoformat(), "steps": 50, "sleep_s": 7200, "hrv_last_night": 60,
+                                       "summary_fetched_on": TODAY.isoformat()})
+        c.commit()
+        c.close()
+        stats = build_export(28)["stats"]
+        self.assertEqual(stats["sleep_hours"]["n"], 2)
+        self.assertEqual(stats["sleep_hours"]["last7_mean"], 1.5)
+        self.assertEqual(stats["hrv_last_night_ms"]["last7_mean"], 50)
+        self.assertEqual(stats["steps"]["n"], 1)
+        self.assertEqual(stats["steps"]["last7_mean"], 1000)
 
     def test_activity_names_never_leave(self):
         self.seed()

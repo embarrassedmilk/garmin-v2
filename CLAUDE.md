@@ -11,7 +11,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 
 ## Layout
 - `backend/db.py`: SQLite (`data/garmin.db`, gitignored). Tables `daily` (one row per date), `activities`, `meta`. `upsert()` never overwrites an existing value with NULL.
-- `backend/sync.py`: pulls daily summaries, sleep summaries, HRV summaries and activities in 28-day chunks; one failing endpoint is recorded in `errors` and does not stop the others.
+- `backend/sync.py`: pulls daily summaries, sleep summaries, HRV summaries and activities in 28-day chunks, newest first; a failing chunk is recorded in `errors` and does not stop the others.
 - `backend/export.py`: builds the compact, identifier-free JSON summary (`GET /api/export`) that I attach to AI chats for analysis.
 - `backend/main.py`: FastAPI. `GET /api/daily`, `/api/activities`, `/api/status`, `/api/export`; `POST /api/sync`; serves `frontend/`.
 - `frontend/index.html`: single file, Chart.js from a CDN, light/dark via CSS variables. Sleep hero, stat row, charts, workouts table, range select (7/14/28 days), Sync and Export buttons.
@@ -25,7 +25,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Keep changes small and simple. Update the checkboxes in `PLAN.md` as work completes.
 
 ## Data facts that matter
-- Sleep rows are dated by the wake-up day. Today's row is partial until the day ends, so re-sync it and exclude it from statistics.
+- Sleep rows are dated by the wake-up day. A row is partial until it is fetched after its day has ended (`summary_fetched_on`). Partial rows' steps, stress, body battery, resting HR and workouts are excluded from statistics; their sleep and HRV cover the night that just ended and are included.
 - Units from Garmin: seconds (durations), metres (distance), grams (weight), epoch milliseconds (most timestamps).
 - HRV baseline and status are null while Garmin is onboarding the account; only nightly and weekly averages are reliable.
 - Not available from the Personal API: VO2 max, training readiness, training status, recovery time, performance condition (checked via dumps, activity details, and probes). Substitutes: `activityTrainingLoad`, training effect, fitness age, resting HR, HRV, sleep score, body battery.

@@ -7,12 +7,20 @@ from . import db
 CAVEATS = [
     "Single user, wrist-worn Garmin watch. Values are Garmin's estimates, not clinical measurements.",
     "Sleep rows are dated by wake-up day.",
-    "The row for today has partial=true: it is incomplete and excluded from stats.",
+    "Rows with partial=true were last fetched before the day ended: steps, stress, body battery, resting HR "
+    "and workouts are incomplete and excluded from stats. Sleep and HRV on those rows cover the night that "
+    "ended that morning, and are included.",
     "HRV baseline/status may be unavailable while Garmin is still onboarding; only nightly averages are included.",
     "Some values (e.g. sleep_spo2) can be null.",
     "No context data (food, alcohol, caffeine, illness, mood, work). Do not guess causes.",
     "Only a few weeks of data: flag low confidence, avoid trend claims on short samples, no medical advice.",
 ]
+OVERNIGHT_KEYS = {"hrv_last_night_ms", "sleep_score", "sleep_hours", "deep_min", "rem_min", "sleep_avg_hr"}
+
+
+def _is_partial(r: dict, today: str) -> bool:
+    fetched = r["summary_fetched_on"]
+    return r["date"] >= today or fetched is None or fetched <= r["date"]
 
 
 def _r(v, n=1):
@@ -38,7 +46,7 @@ def build_export(days: int = 28) -> dict:
 
     today = date.today().isoformat()
     daily = [{
-        "date": r["date"], "partial": r["date"] == today,
+        "date": r["date"], "partial": _is_partial(r, today),
         "steps": r["steps"], "step_goal": r["step_goal"], "distance_km": _r(r["distance_m"] and r["distance_m"] / 1000, 1),
         "calories_total": r["calories_total"], "calories_active": r["calories_active"],
         "resting_hr": r["rhr"], "hr_min": r["hr_min"], "hr_max": r["hr_max"],
@@ -58,15 +66,17 @@ def build_export(days: int = 28) -> dict:
     } for a in acts]  # names omitted on purpose: they can contain place names
 
     done = [d for d in daily if not d["partial"]]
+    nights = [d for d in daily if not d["partial"] or any(d[k] is not None for k in OVERNIGHT_KEYS)]
     recent, earlier = done[-7:], done[:-7]
     keys = ["resting_hr", "hrv_last_night_ms", "sleep_score", "sleep_hours", "deep_min", "rem_min", "steps",
             "stress_avg", "body_battery_charged", "body_battery_drained", "sleep_avg_hr"]
     stats = {}
     for k in keys:
-        vals = [d[k] for d in done if d[k] is not None]
+        source = nights if k in OVERNIGHT_KEYS else done
+        vals = [d[k] for d in source if d[k] is not None]
         stats[k] = {
             "n": len(vals), "mean": _avg(vals), "min": min(vals, default=None), "max": max(vals, default=None),
-            "last7_mean": _avg([d[k] for d in recent]), "earlier_mean": _avg([d[k] for d in earlier]),
+            "last7_mean": _avg([d[k] for d in source[-7:]]), "earlier_mean": _avg([d[k] for d in source[:-7]]),
         }
     dates = {d["date"] for d in recent}
     prior_dates = {d["date"] for d in earlier}

@@ -104,20 +104,20 @@ def run_sync(days: int = 28) -> dict:
 
         def pull(name, fetch, parse, table, key_col):
             n = 0
-            try:
-                for s, e in chunks(start, end):
+            for s, e in reversed(list(chunks(start, end))):  # newest first: recent data matters most
+                try:
                     for item in fetch(s, e):
                         row = parse(item)
                         if row[key_col] is None:  # nothing to key it on, e.g. a null calendarDate
                             continue
                         db.upsert(c, table, key_col, row)
                         n += 1
-            except Exception as ex:  # keep going: one failing endpoint shouldn't block the rest
-                errors.append(f"{name}: {type(ex).__name__}: {str(ex)[:200]}")
+                except Exception as ex:  # keep going: one failing window shouldn't block the rest
+                    errors.append(f"{name} {s} to {e}: {type(ex).__name__}: {str(ex)[:200]}")
             counts[name] = n
 
         pull("daily_summaries", lambda s, e: (client.get_daily_summaries(s, e) or {}).get("data") or [],
-             parse_summary, "daily", "date")
+             lambda d: {**parse_summary(d), "summary_fetched_on": end.isoformat()}, "daily", "date")
         pull("sleep", lambda s, e: client.get_daily_sleep_summaries(s, e) or [], parse_sleep, "daily", "date")
         pull("hrv", lambda s, e: (client.get_daily_hrv_summaries(s, e) or {}).get("hrvSummaries") or [],
              parse_hrv, "daily", "date")

@@ -79,3 +79,4 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - 2026-10-31: dashboard v1 and export button built in chat.
 - 2026-11-02: moving to Claude Code; `CLAUDE.md` rewritten.
 - 2026-11-03: fixed the `sync.py` import; removed an all-NULL `daily` row that emptied workouts in the 28-day export; `daily.date` is now NOT NULL; added `.gitignore` and tests.
+- 2026-11-03: sync runs chunks newest first and isolates errors per chunk; a day stays partial until fetched after it ended; last night's sleep and HRV now count in stats.

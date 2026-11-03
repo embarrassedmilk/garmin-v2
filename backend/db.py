@@ -16,7 +16,7 @@ DAILY_COLS = [
 SCHEMA = (
     "CREATE TABLE IF NOT EXISTS daily (date TEXT PRIMARY KEY NOT NULL, "
     + ", ".join(f"{c} REAL" for c in DAILY_COLS)
-    + ");"
+    + ", summary_fetched_on TEXT);"  # day-totals are only final if fetched after the day ended
     "CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, start_local TEXT, type TEXT, "
     "name TEXT, duration_s REAL, distance_m REAL, avg_hr REAL, max_hr REAL, calories REAL, "
     "te_aerobic REAL, te_anaerobic REAL, training_load REAL);"
