@@ -1,7 +1,7 @@
 # Garmin Dashboard: Plan
 
 Local web dashboard for my Garmin watch metrics, with AI insights (Gemini and/or Claude).
-Status as of 2026-11-02: phases 1 to 4 work locally with 28 days of data. Next: history depth, scheduled sync, insights.
+Status as of 2026-11-03: dashboard v1 works locally, with data from 2026-10-15 onwards. Syncing is manual. Next: confirm history depth, then the daily tag log and baselines. Insights wait until there are 6 to 8 weeks of data.
 
 ## Stack (confirmed)
 - Backend: Python (managed with uv) + FastAPI
@@ -37,15 +37,14 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 
 ### 2. Garmin exploration
 - [x] `scripts/explore.py` using the official client; raw dumps in `raw_dumps/`
-- [x] Findings in `docs/data-notes.md`
+- [ ] Findings in `docs/data-notes.md` (still a stub)
 - [x] v1 metrics chosen
-- [ ] How far back does each endpoint's history go? (probe older 28-day windows; decide backfill size)
+- [ ] How far back does each endpoint's history go? A 28-day sync on 2026-11-01 returned nothing before 2026-10-15, so one older-window probe should settle it
 
 ### 3. Data layer
 - [x] `backend/db.py`: SQLite schema (daily, activities, meta)
 - [x] `backend/sync.py`: 28-day chunking, per-endpoint error isolation
-- [x] Manual sync: button, `POST /api/sync`, `python -m backend.sync`
-- [ ] Scheduled daily sync (re-sync today and yesterday; today's row is partial)
+- [x] Manual sync: button, `POST /api/sync`, `python -m backend.sync` (no scheduled job, by choice)
 - [x] Stale-data banner and failed logins shown in the dashboard
 - [ ] Longer backfill once history depth is known
 
@@ -55,8 +54,11 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Workouts table
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
 - [x] Export for Claude button (`GET /api/export`)
+- [ ] Stat row: show each value against my own baseline
+- [ ] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Start early: tags can't be collected reliably after the fact
 
 ### 5. AI insights
+Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10). Until then, most output would be "too thin to say".
 - [x] Manual route: export JSON attached to a Claude chat (works today)
 - [ ] `backend/insights.py`: code computes stats, model writes narrative; provider switch `gemini` | `anthropic`, same prompt
 - [ ] Prompt rules: state confidence and sample size, flag thin data, no causal claims, no medical advice
@@ -66,7 +68,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 ### 6. Polish
 - [x] Smoke and export tests (`tests/test_app.py`, temporary database, no Garmin calls)
 - [ ] Tests with sanitized fixtures (parsers in `sync.py`, stats in `export.py`)
-- [ ] Error states (expired key, Garmin down, no data)
+- [x] Sync failures shown in the UI (expired key, Garmin down)
 - [ ] Loading states
 - [ ] README
 
@@ -81,3 +83,5 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - 2026-11-02: moving to Claude Code; `CLAUDE.md` rewritten.
 - 2026-11-03: fixed the `sync.py` import; removed an all-NULL `daily` row that emptied workouts in the 28-day export; `daily.date` is now NOT NULL; added `.gitignore` and tests.
 - 2026-11-03: sync runs chunks newest first and isolates errors per chunk; a day stays partial until fetched after it ended; last night's sleep and HRV now count in stats.
+- 2026-11-03: dropped the scheduled sync in favour of syncing manually; kept the out-of-date banner (over 36 hours since the last successful sync).
+- 2026-11-03: added the daily tag log and baselines to the plan; insights wait for 6 to 8 weeks of data.

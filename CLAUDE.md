@@ -10,12 +10,13 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Dump raw Garmin responses for exploration: `uv run python scripts/explore.py [--days N] [--only sleep hrv] [--path /x --param k=v]` (writes `raw_dumps/`, gitignored)
 
 ## Layout
-- `backend/db.py`: SQLite (`data/garmin.db`, gitignored). Tables `daily` (one row per date), `activities`, `meta`. `upsert()` never overwrites an existing value with NULL.
+- `backend/db.py`: SQLite (`data/garmin.db`, gitignored). Tables `daily` (one row per date), `activities`, `meta` (`last_sync` is the latest attempt; `last_ok_at` is the last run that stored data). `upsert()` never overwrites an existing value with NULL.
 - `backend/sync.py`: pulls daily summaries, sleep summaries, HRV summaries and activities in 28-day chunks, newest first; a failing chunk is recorded in `errors` and does not stop the others.
 - `backend/export.py`: builds the compact, identifier-free JSON summary (`GET /api/export`) that I attach to AI chats for analysis.
 - `backend/main.py`: FastAPI. `GET /api/daily`, `/api/activities`, `/api/status`, `/api/export`; `POST /api/sync`; serves `frontend/`.
-- `frontend/index.html`: single file, Chart.js from a CDN, light/dark via CSS variables. Sleep hero, stat row, charts, workouts table, range select (7/14/28 days), Sync and Export buttons.
-- `scripts/explore.py`, `docs/data-notes.md`, `PLAN.md`, `.env.example`.
+- `frontend/index.html`: single file, Chart.js from a CDN, light/dark via CSS variables. Sleep hero, stat row, charts, workouts table, range select (7/14/28 days), Sync and Export buttons, banner for sync errors and out-of-date data.
+- `tests/test_app.py`: smoke, sync and export tests.
+- `scripts/explore.py`, `docs/data-notes.md` (still a stub), `PLAN.md`, `.env.example`.
 
 ## Rules
 - Use Garmin's official client (`garmin_personal_api`) for every Garmin call. No hand-rolled HTTP. It handles the key-to-token exchange (tokens last 24h) and caches the token at `~/.config/garmin/`.
@@ -37,14 +38,16 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Put it in `backend/insights.py` with a provider switch (`gemini` | `anthropic`) using the same prompt so outputs can be compared. Cache results; add a "regenerate" action.
 
 ## Next steps
-1. Find out how far back each endpoint's history goes (probe older 28-day windows) and decide how much to backfill.
-2. Scheduled daily sync (the Sync button and CLI exist; nothing runs automatically yet).
-3. `insights.py` plus an insights panel in the UI.
+1. Confirm how far back each endpoint's history goes. Data so far starts at 2026-10-15, so one older-window probe should settle it, then decide on any backfill.
+2. Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export.
+3. Stat row: show each value against my own baseline.
 4. Tests using sanitized fixtures from `raw_dumps/` for the parsers in `sync.py` and the stats in `export.py`.
-5. Error states in the UI (expired key, Garmin down), README.
+5. Fill in `docs/data-notes.md`; README.
+6. `insights.py` plus an insights panel in the UI, once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10).
 
 ## Decisions already made
 - uv for the environment; Python + FastAPI + SQLite + plain HTML/JS.
 - Garmin's official client, not the third-party `gcpapi-sync` (which would add automatic range-splitting and retries but is a single-maintainer package).
 - v1 metrics: sleep, resting HR, HRV, steps, stress, body battery, training load, workouts.
+- Sync is manual (Sync button or CLI). No scheduled job: one was written and deliberately dropped, so don't re-add it unless asked.
 - Start with 28 days of data; insights explored first by attaching the export to a chat, then automated.
