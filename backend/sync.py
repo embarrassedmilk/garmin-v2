@@ -3,11 +3,14 @@
 Run:  uv run python -m backend.sync [--days 28]
 """
 import argparse
+import io
 import json
 import os
+import zipfile
 from datetime import date, datetime, timedelta
 
 from dotenv import load_dotenv
+from garmin_fit_sdk import Decoder, Stream
 from garmin_personal_api import GarminPersonalApiClient, PersonalApiAuthenticator
 
 from . import db
@@ -86,7 +89,50 @@ def parse_activity(a: dict) -> dict:
         "te_aerobic": a.get("aerobicTrainingEffect"),
         "te_anaerobic": a.get("anaerobicTrainingEffect"),
         "training_load": a.get("activityTrainingLoad"),
+        "elevation_gain_m": a.get("elevationGain"),
+        "elevation_loss_m": a.get("elevationLoss"),
+        "avg_gap_mps": a.get("avgGradeAdjustedSpeed"),
+        "avg_cadence_spm": a.get("averageRunningCadenceInStepsPerMinute"),
+        "avg_stride_cm": a.get("avgStrideLength"),
+        **{f"hr_z{n}_s": a.get(f"hrTimeInZone_{n}") for n in range(1, 6)},
+        "run_details": "{}" if a.get("manualActivity") else None,  # manual entries have no file to fetch
     }
+
+
+def read_fit(zip_bytes: bytes) -> dict:
+    """Decode an activity file in memory. It also holds GPS and profile data, so it is never saved."""
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+        fit = z.read(next(n for n in z.namelist() if n.lower().endswith(".fit")))
+    messages, _ = Decoder(Stream.from_byte_array(bytearray(fit))).read(convert_datetimes_to_dates=False, merge_heart_rates=False)
+    return messages
+
+
+def parse_vo2max(messages: dict):
+    """VO2 max from undocumented message 140, field 7 (METs as 16.16 fixed point). Matches the value on the watch."""
+    raw = next(iter(messages.get("140", [])), {}).get(7)
+    value = None if raw is None else raw / 65536 * 3.5
+    return value if value and 10 <= value <= 100 else None  # undocumented, so reject anything implausible
+
+
+def parse_run_details(messages: dict) -> dict:
+    """Keep only laps, HR zone boundaries and VO2 max from a decoded activity file."""
+    laps = []
+    for lap in messages.get("lap_mesgs", []):
+        cadence = lap.get("avg_running_cadence")
+        if cadence is not None:  # the file stores strides per minute: one foot, whole and fractional parts
+            cadence = (cadence + (lap.get("avg_fractional_cadence") or 0)) * 2
+        laps.append({
+            "dist_m": lap.get("total_distance"),
+            "time_s": lap.get("total_timer_time"),
+            "hr": lap.get("avg_heart_rate"),
+            "gain_m": lap.get("total_ascent"),
+            "loss_m": lap.get("total_descent"),
+            "cadence_spm": cadence,
+            "gap_mps": lap.get("avg_grade_adjusted_speed"),
+            "trigger": lap.get("lap_trigger"),
+        })
+    zones = next((z for z in messages.get("time_in_zone_mesgs", []) if z.get("reference_mesg") == "session"), {})
+    return {"laps": laps, "hr_zone_bounds_bpm": zones.get("hr_zone_high_boundary"), "vo2max": parse_vo2max(messages)}
 
 
 def _record(c, days: int, counts: dict, errors: list) -> dict:
@@ -150,6 +196,21 @@ def run_sync(days: int = 28) -> dict:
                 page += 40
 
         pull("activities", activities, parse_activity, "activities", "id")
+
+        # One download per run, once: a run's laps don't change after upload.
+        run_types = list(db.RUN_SUBTYPES)
+        pending = c.execute(
+            f"SELECT id, start_local FROM activities WHERE run_details IS NULL AND substr(start_local,1,10) >= ? "
+            f"AND type IN ({', '.join('?' * len(run_types))})", [start.isoformat(), *run_types]).fetchall()
+        counts["run_details"] = 0
+        for run in pending:
+            try:
+                details = parse_run_details(read_fit(client.download_activity(run["id"])))
+                db.upsert(c, "activities", "id", {"id": run["id"], "run_details": json.dumps(details)})
+                counts["run_details"] += 1
+            except Exception as ex:
+                errors.append(f"run_details {run['start_local'][:10]}: {type(ex).__name__}: {str(ex)[:200]}")
+            c.commit()
 
     return _record(c, days, counts, errors)
 

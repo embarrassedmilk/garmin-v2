@@ -23,7 +23,8 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - Key is exchanged for an access token valid 24h (the official client caches it). No refresh tokens.
 - Read-only. Base URL: https://personal.connectapi.garmin.com
 - Per-request limits: 28 days (steps, stress), 31 days (daily summaries, sleep summaries, body battery), 365 days (HRV), ~45 activities per page. Daily summaries over ~90 days fail with HTTP 500. Chunk at 28 days.
-- Not available: VO2 max, training readiness, training status, recovery time, performance condition.
+- VO2 max is only in activity files (undocumented field, matches the watch).
+- Not available: training readiness, training status, recovery time, acute and chronic load, run temperature.
 - Details and quirks: `docs/data-notes.md`
 - Docs: https://developer.garmin.com/gc-developer-program/personal/personal-api
 - Swagger (needs a browser, JavaScript): https://developer.garmin.com/gc-developer-program/personal/swagger-docs/
@@ -52,6 +53,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Sleep hero, stat row (resting HR, HRV, steps, stress, body battery)
 - [x] Charts: sleep stages + score, resting HR + HRV, steps, stress + body battery, training load
 - [x] Workouts table
+- [x] Run pop-up: summary stats, time in each zone, km splits
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
 - [x] Export for Claude button (`GET /api/export`)
 - [ ] Stat row: show each value against my own baseline
@@ -60,6 +62,8 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 ### 5. AI insights
 Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10). Until then, most output would be "too thin to say".
 - [x] Manual route: export JSON attached to a Claude chat (works today)
+- [x] Export: detailed running fields (elevation, GAP, splits, HR zones, form, drift), `stats.runs`, `readiness` (VO2 max), new caveats
+- [ ] Check whether activity file message 140 field 9 is recovery minutes, against the watch
 - [ ] `backend/insights.py`: code computes stats, model writes narrative; provider switch `gemini` | `anthropic`, same prompt
 - [ ] Prompt rules: state confidence and sample size, flag thin data, no causal claims, no medical advice
 - [ ] Cache result; "regenerate" button; insights panel in the UI
@@ -85,3 +89,4 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - 2026-11-03: sync runs chunks newest first and isolates errors per chunk; a day stays partial until fetched after it ended; last night's sleep and HRV now count in stats.
 - 2026-11-03: dropped the scheduled sync in favour of syncing manually; kept the out-of-date banner (over 36 hours since the last successful sync).
 - 2026-11-03: added the daily tag log and baselines to the plan; insights wait for 6 to 8 weeks of data.
+- 2026-11-03: added detailed running fields to the export, using the activity file for laps (new dependency: `garmin-fit-sdk`). Sleep SpO2 is null since 2026-10-28 because Garmin returns none, not because of the parser. Added VO2 max from an undocumented activity file field, after matching it to the watch. Export went from 15,025 to 27,100 bytes on the 20-day range.

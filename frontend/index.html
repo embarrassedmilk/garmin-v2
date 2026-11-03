@@ -252,6 +252,118 @@
             padding: 40px 0;
             color: var(--mute)
         }
+
+        tr[data-run] {
+            cursor: pointer
+        }
+
+        tr[data-run]:hover {
+            background: var(--line)
+        }
+
+        .link {
+            border: 0;
+            padding: 0;
+            text-decoration: underline;
+            text-underline-offset: 3px
+        }
+
+        dialog {
+            width: min(760px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            padding: 0;
+            color: var(--ink);
+            background: var(--bg);
+            border: 1px solid var(--line);
+            border-radius: 10px
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, .5)
+        }
+
+        .run {
+            padding: 20px 24px 8px
+        }
+
+        .run header {
+            margin-bottom: 8px;
+            flex-wrap: nowrap
+        }
+
+        .run h2 {
+            margin: 0;
+            font-size: 1.2rem
+        }
+
+        .run section:last-child {
+            border-bottom: 0
+        }
+
+        .tiles {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 14px 16px;
+            padding: 12px 0 22px;
+            border-bottom: 1px solid var(--line)
+        }
+
+        .tiles small {
+            display: block;
+            color: var(--mute);
+            font-size: .85rem
+        }
+
+        .tiles b {
+            font-size: 1.25rem;
+            font-weight: 600
+        }
+
+        .zone {
+            display: grid;
+            grid-template-columns: 110px 1fr 110px;
+            gap: 10px;
+            align-items: center;
+            padding: 3px 0;
+            font-size: .9rem
+        }
+
+        .zone span {
+            color: var(--mute)
+        }
+
+        .zone div {
+            height: 12px
+        }
+
+        .zone i {
+            display: block;
+            height: 100%;
+            border-radius: 0 4px 4px 0;
+            background: var(--heart)
+        }
+
+        .zone em {
+            font-style: normal;
+            text-align: right
+        }
+
+        .pair {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px
+        }
+
+        .pair h4 {
+            margin: 0 0 4px;
+            font-size: .9rem;
+            font-weight: 600
+        }
+
+        .pair .chart {
+            height: 160px
+        }
     </style>
 </head>
 
@@ -274,13 +386,16 @@
         <p id="msg" role="status" hidden></p>
         <div id="app"></div>
     </main>
+    <dialog id="run" aria-labelledby="run-title"></dialog>
     <script>
         const $ = s => document.querySelector(s), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
         const hm = s => s == null ? '–' : `${Math.floor(s / 3600)}h ${String(Math.round(s % 3600 / 60)).padStart(2, '0')}m`;
         const num = (v, d = 0) => v == null ? '–' : Number(v).toFixed(d);
         const day = d => new Date(d + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
+        const pace = m => { if (!m) return '–'; const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };
         const STALE_MS = 36 * 3600 * 1000;
-        let charts = [], DAILY = [], ACTS = [];
+        let charts = [], runCharts = [], DAILY = [], ACTS = [];
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
         function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
@@ -323,7 +438,7 @@
   <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
   <section><h3>Stress and body battery</h3><p>Average stress (0–100) and how much body battery you gained and used each day.</p><div class="chart"><canvas id="c4"></canvas></div></section>
   <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>
-  <section><h3>Recent workouts</h3><div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${ACTS.slice(0, 12).map(a => `<tr><td>${day(a.start_local.slice(0, 10))}</td><td>${a.name || a.type}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div></section>`;
+  <section><h3>Recent workouts</h3><div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${ACTS.slice(0, 12).map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div></section>`;
 
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
@@ -340,6 +455,51 @@
             mk('c5', 'bar', [bar('Training load', DAILY.map(r => load[r.date] ?? 0), '--deep')], { y: { beginAtZero: true } });
         }
 
+        function zoneRows(r) {
+            const z = r.hr_zone_minutes, b = r.hr_zone_bounds_bpm;
+            if (!z) return '';
+            const total = Object.values(z).reduce((x, y) => x + y, 0) || 1;
+            const rows = [1, 2, 3, 4, 5].map(n => {
+                const bpm = b ? ` ${b[n - 1]}–${n === 5 ? b[5] : b[n] - 1}` : '', share = z['z' + n] / total * 100;
+                return `<div class="zone"><span>Z${n}${bpm}</span><div><i style="width:${share}%"></i></div><em>${num(z['z' + n], 1)} min · ${num(share)}%</em></div>`;
+            }).join('');
+            return `<section><h3>Time in each zone</h3><p>Heart rate zones in bpm, as share of the time spent in zones. Time below zone 1 isn't counted.</p>${rows}</section>`;
+        }
+
+        function splitRows(r) {
+            const S = r.splits;
+            if (!S) return '<section><h3>Splits</h3><p>No split data for this run.</p></section>';
+            const graphs = S.length > 1 ? `<div class="pair"><div><h4>Pace (min/km)</h4><div class="chart"><canvas id="run-pace"></canvas></div></div><div><h4>Average heart rate (bpm)</h4><div class="chart"><canvas id="run-hr"></canvas></div></div></div>` : '';
+            const body = S.map(s => `<tr><td>${s.km}</td><td>${pace(s.pace_min_per_km)}</td><td>${num(s.avg_hr)}</td><td>${num(s.elevation_gain_m)}</td><td>${num(s.elevation_loss_m)}</td><td>${num(s.cadence_spm)}</td></tr>`).join('');
+            return `<section><h3>${r.split_type === 'km' ? 'Km splits' : 'Laps'}</h3><p>Km is where each split ends. Elevation comes from the barometer and isn't corrected.</p>${graphs}<div class="wrap"><table><thead><tr><th>Km</th><th>Pace</th><th>Avg HR</th><th>Gain (m)</th><th>Loss (m)</th><th>Cadence</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+        }
+
+        function openRun(a) {
+            const r = a.run, km = a.distance_m / 1000;
+            const tiles = [
+                ['Distance', a.distance_m && num(km, 2) + ' km'], ['Time', a.duration_s && hm(a.duration_s)],
+                ['Average pace', km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km'], ['Grade-adjusted pace', r.avg_gap_min_per_km && pace(r.avg_gap_min_per_km) + ' /km'],
+                ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm'],
+                [r.hr_drift_basis === 'gap' ? 'HR drift' : 'HR drift (not grade-adjusted)', r.hr_drift_pct != null && `${r.hr_drift_pct > 0 ? '+' : ''}${r.hr_drift_pct}%`],
+                ['Cadence', r.avg_cadence_spm && r.avg_cadence_spm + ' spm'], ['Stride', r.avg_stride_length_m && r.avg_stride_length_m + ' m'],
+                ['Elevation', r.elevation_gain_m != null && `+${r.elevation_gain_m} / −${r.elevation_loss_m ?? '–'} m`],
+                ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
+            ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+            const dlg = $('#run');
+            dlg.innerHTML = `<div class="run">
+  <header><div><h2 id="run-title">${esc(a.name || a.type)}</h2><span class="bar">${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}</span></div><button autofocus onclick="$('#run').close()">Close</button></header>
+  <div class="tiles">${tiles}</div>${zoneRows(r)}${splitRows(r)}</div>`;
+            dlg.showModal();
+            if (!$('#run-pace')) return;
+            const opt = (extra = {}) => ({ maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: extra.tooltip }, scales: { x: { title: { display: true, text: 'km' } }, y: extra.y || {} } });
+            const line = (id, key, c, extra) => runCharts.push(new Chart($('#' + id), { type: 'line', data: { labels: r.splits.map(s => s.km), datasets: [{ data: r.splits.map(s => s[key]), borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 3, tension: .25, spanGaps: true }] }, options: opt(extra) }));
+            line('run-pace', 'pace_min_per_km', '--deep', { y: { reverse: true, ticks: { callback: pace } }, tooltip: { callbacks: { label: c => pace(c.parsed.y) + ' /km' } } });
+            line('run-hr', 'avg_hr', '--heart', { tooltip: { callbacks: { label: c => c.parsed.y + ' bpm' } } });
+        }
+
+        $('#run').onclose = () => { runCharts.forEach(c => c.destroy()); runCharts = [] };
+        $('#run').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
+        $('#app').onclick = e => { const tr = e.target.closest('tr[data-run]'); if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run)) };
         $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
         $('#range').onchange = () => load().catch(e => say(e.message));
         $('#sync').onclick = async e => {

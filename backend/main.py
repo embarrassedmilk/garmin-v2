@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .export import build_export
+from .export import build_export, run_fields
 from .sync import run_sync
 
 app = FastAPI(title="Garmin dashboard")
@@ -27,7 +27,7 @@ def daily(days: int = 28):
 def activities(limit: int = 100):
     with db.connect() as c:
         rows = c.execute("SELECT * FROM activities ORDER BY start_local DESC LIMIT ?", (limit,)).fetchall()
-    return [dict(r) for r in rows]
+    return [{**r, "run": run_fields(r) if r["type"] in db.RUN_SUBTYPES else None} for r in map(dict, rows)]
 
 
 @app.get("/api/status")

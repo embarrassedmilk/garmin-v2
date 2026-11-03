@@ -23,12 +23,27 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);"
 )
 
+# Added after the first release, so existing databases need them too.
+ADDED_ACTIVITY_COLS = {
+    "elevation_gain_m": "REAL", "elevation_loss_m": "REAL", "avg_gap_mps": "REAL",
+    "avg_cadence_spm": "REAL", "avg_stride_cm": "REAL",
+    "hr_z1_s": "REAL", "hr_z2_s": "REAL", "hr_z3_s": "REAL", "hr_z4_s": "REAL", "hr_z5_s": "REAL",
+    "run_details": "TEXT",  # JSON from the activity file: laps and HR zone boundaries. "{}" means no file.
+}
+
+# Garmin activity type -> activity_subtype in the export. Only these get the detailed run fields.
+RUN_SUBTYPES = {"running": "road", "trail_running": "trail", "treadmill_running": "treadmill"}
+
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
+    existing = {r["name"] for r in c.execute("PRAGMA table_info(activities)")}
+    for col, kind in ADDED_ACTIVITY_COLS.items():
+        if col not in existing:
+            c.execute(f"ALTER TABLE activities ADD COLUMN {col} {kind}")
     return c
 
 
