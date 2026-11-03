@@ -477,13 +477,13 @@
         const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
         function workoutsHtml() {
-            const counts = {};
-            ACTS.forEach(a => { counts[typeKey(a)] = (counts[typeKey(a)] || 0) + 1 });
+            const inRange = ACTS.filter(a => a.start_local.slice(0, 10) >= DAILY[0].date), counts = {};
+            inRange.forEach(a => { counts[typeKey(a)] = (counts[typeKey(a)] || 0) + 1 });
             const types = Object.keys(counts).sort((x, y) => counts[y] - counts[x] || x.localeCompare(y));
-            if (!counts[workoutTab]) workoutTab = 'all';
-            const tab = (key, label, n) => `<button data-tab="${esc(key)}" aria-pressed="${key === workoutTab}">${esc(label)} <span>${n}</span></button>`;
-            const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', ACTS.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
-            const list = workoutTab === 'all' ? ACTS : ACTS.filter(a => typeKey(a) === workoutTab), shown = list.slice(0, MAX_WORKOUTS);
+            const active = counts[workoutTab] ? workoutTab : 'all';  // workoutTab is kept, so a wider range brings the tab back
+            const tab = (key, label, n) => `<button data-tab="${esc(key)}" aria-pressed="${key === active}">${esc(label)} <span>${n}</span></button>`;
+            const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', inRange.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
+            const list = active === 'all' ? inRange : inRange.filter(a => typeKey(a) === active), shown = list.slice(0, MAX_WORKOUTS);
             const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}.</p>` : '';
             return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
         }
@@ -517,9 +517,9 @@
 
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
-            const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } } } };
+            const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, sort: (a, b) => a.datasetIndex - b.datasetIndex } }, tooltip: { itemSort: (a, b) => a.datasetIndex - b.datasetIndex } } };
             const mk = (id, type, datasets, scales) => charts.push(new Chart($('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
-            const ln = (label, k, c, extra = {}) => ({ type: 'line', label, data: DAILY.map(r => r[k]), borderColor: css(c), backgroundColor: css(c), tension: .25, pointRadius: 2, spanGaps: true, ...extra });
+            const ln = (label, k, c, extra = {}) => ({ type: 'line', label, data: DAILY.map(r => r[k]), borderColor: css(c), backgroundColor: css(c), tension: .25, pointRadius: 2, spanGaps: true, order: -1, ...extra });  // order: drawn over the bars
             const bar = (label, data, c, extra = {}) => ({ type: 'bar', label, data, backgroundColor: css(c), ...extra });
             mk('c1', 'bar', [bar('Deep', h('deep_s'), '--deep', { stack: 's' }), bar('Light', h('light_s'), '--light', { stack: 's' }), bar('REM', h('rem_s'), '--rem', { stack: 's' }), bar('Awake', h('awake_s'), '--awake', { stack: 's' }), ln('Sleep score', 'sleep_score', '--ink', { yAxisID: 'y1' })],
                 { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'hours' } }, y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: 'score' } } });
