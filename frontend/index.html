@@ -282,22 +282,43 @@
             background: rgba(0, 0, 0, .5)
         }
 
-        .run {
+        .pop {
             padding: 20px 24px 8px
         }
 
-        .run header {
+        .pop header {
             margin-bottom: 8px;
             flex-wrap: nowrap
         }
 
-        .run h2 {
+        .pop h2 {
             margin: 0;
             font-size: 1.2rem
         }
 
-        .run section:last-child {
+        .pop section:last-child {
             border-bottom: 0
+        }
+
+        .pop .legend {
+            margin-top: 10px
+        }
+
+        .pop .legend u {
+            opacity: .35
+        }
+
+        [data-stress] {
+            cursor: pointer
+        }
+
+        [data-stress] .link {
+            display: block;
+            text-align: left
+        }
+
+        [data-stress]:hover small {
+            color: var(--ink)
         }
 
         .tiles {
@@ -386,16 +407,18 @@
         <p id="msg" role="status" hidden></p>
         <div id="app"></div>
     </main>
-    <dialog id="run" aria-labelledby="run-title"></dialog>
+    <dialog id="pop" aria-labelledby="pop-title"></dialog>
     <script>
         const $ = s => document.querySelector(s), css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-        const hm = s => s == null ? '–' : `${Math.floor(s / 3600)}h ${String(Math.round(s % 3600 / 60)).padStart(2, '0')}m`;
+        const hm = s => { if (s == null) return '–'; const m = Math.round(s / 60); return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` };
         const num = (v, d = 0) => v == null ? '–' : Number(v).toFixed(d);
         const day = d => new Date(d + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
         const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
         const pace = m => { if (!m) return '–'; const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };
+        const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
+        const barRow = (label, share, value) => `<div class="zone"><span>${label}</span><div><i style="width:${share}%"></i></div><em>${value} · ${num(share)}%</em></div>`;
         const STALE_MS = 36 * 3600 * 1000;
-        let charts = [], runCharts = [], DAILY = [], ACTS = [];
+        let charts = [], popCharts = [], DAILY = [], ACTS = [];
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
         function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
@@ -420,7 +443,7 @@
             const L = [...DAILY].reverse(), last = k => (L.find(r => r[k] != null) || {})[k];
             const sl = L.find(r => r.sleep_s != null) || {}, tot = (sl.deep_s || 0) + (sl.light_s || 0) + (sl.rem_s || 0) + (sl.awake_s || 0) || 1;
             const seg = (k, c) => `<i style="width:${(sl[k] || 0) / tot * 100}%;background:var(${c})"></i>`;
-            const t = L[0];
+            const t = L[0], stressDay = t.stress_avg != null ? t.date : (L.find(r => r.stress_avg != null) || {}).date;
             app.innerHTML = `
   <div class="hero"><h2>Sleep, night ending ${sl.date ? day(sl.date) : '–'}</h2>
     <div class="big"><b>${hm(sl.sleep_s)}</b><span>Garmin sleep score ${num(sl.sleep_score)}</span></div>
@@ -430,7 +453,7 @@
     <div class="stat"><small>Resting heart rate</small><b>${num(last('rhr'))}</b><em>bpm</em></div>
     <div class="stat"><small>HRV last night</small><b>${num(last('hrv_last_night'))}</b><em>ms</em></div>
     <div class="stat"><small>Steps ${day(t.date)}</small><b>${num(t.steps).replace(/\B(?=(\d{3})+$)/g, ',')}</b><em>/ ${num(t.step_goal)}</em></div>
-    <div class="stat"><small>Average stress</small><b>${num(t.stress_avg ?? last('stress_avg'))}</b><em>/ 100</em></div>
+    <div class="stat"${stressDay ? ` data-stress="${stressDay}"` : ''}>${stressDay ? '<button class="link"><small>Average stress</small></button>' : '<small>Average stress</small>'}<b>${num(t.stress_avg ?? last('stress_avg'))}</b><em>/ 100</em></div>
     <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
   </div>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
@@ -461,7 +484,7 @@
             const total = Object.values(z).reduce((x, y) => x + y, 0) || 1;
             const rows = [1, 2, 3, 4, 5].map(n => {
                 const bpm = b ? ` ${b[n - 1]}–${n === 5 ? b[5] : b[n] - 1}` : '', share = z['z' + n] / total * 100;
-                return `<div class="zone"><span>Z${n}${bpm}</span><div><i style="width:${share}%"></i></div><em>${num(z['z' + n], 1)} min · ${num(share)}%</em></div>`;
+                return barRow(`Z${n}${bpm}`, share, `${num(z['z' + n], 1)} min`);
             }).join('');
             return `<section><h3>Time in each zone</h3><p>Heart rate zones in bpm, as share of the time spent in zones. Time below zone 1 isn't counted.</p>${rows}</section>`;
         }
@@ -472,6 +495,48 @@
             const graphs = S.length > 1 ? `<div class="pair"><div><h4>Pace (min/km)</h4><div class="chart"><canvas id="run-pace"></canvas></div></div><div><h4>Average heart rate (bpm)</h4><div class="chart"><canvas id="run-hr"></canvas></div></div></div>` : '';
             const body = S.map(s => `<tr><td>${s.km}</td><td>${pace(s.pace_min_per_km)}</td><td>${num(s.avg_hr)}</td><td>${num(s.elevation_gain_m)}</td><td>${num(s.elevation_loss_m)}</td><td>${num(s.cadence_spm)}</td></tr>`).join('');
             return `<section><h3>${r.split_type === 'km' ? 'Km splits' : 'Laps'}</h3><p>Km is where each split ends. Elevation comes from the barometer and isn't corrected.</p>${graphs}<div class="wrap"><table><thead><tr><th>Km</th><th>Pace</th><th>Avg HR</th><th>Gain (m)</th><th>Loss (m)</th><th>Cadence</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
+        }
+
+        function showPopup(title, sub, body) {
+            const dlg = $('#pop');
+            dlg.innerHTML = `<div class="pop">
+  <header><div><h2 id="pop-title">${title}</h2><span class="bar">${sub}</span></div><button autofocus onclick="$('#pop').close()">Close</button></header>
+  ${body}</div>`;
+            dlg.showModal();
+        }
+
+        const STRESS_BANDS = [['Rest', 'stress_rest_s'], ['Low', 'stress_low_s'], ['Medium', 'stress_med_s'], ['High', 'stress_high_s'], ['Activity', 'stress_activity_s'], ['Uncategorized', 'stress_uncat_s']];
+        const EVENT_COLORS = { SLEEP: '--deep', ACTIVITY: '--awake', STRESS: '--heart', RECOVERY: '--hrv' };
+
+        async function openStress(date) {
+            const r = DAILY.find(d => d.date === date), curve = await api('/api/body-battery/' + date);
+            const partial = !r.summary_fetched_on || r.summary_fetched_on <= r.date;
+            const tiles = [['Average', r.stress_avg], ['Max', r.stress_max], ['During sleep', r.sleep_stress]].filter(t => t[1] != null).map(([k, v]) => `<div><small>${k}</small><b>${num(v)}</b> / 100</div>`).join('');
+            const total = STRESS_BANDS.reduce((sum, [, k]) => sum + (r[k] || 0), 0);
+            const bands = total ? STRESS_BANDS.filter(([, k]) => r[k]).map(([label, k]) => barRow(label, r[k] / total * 100, hm(r[k]))).join('') : '<p>No band data stored for this day yet. Select <b>Sync now</b> to load it.</p>';
+            const legend = curve.events.map(e => `<span><u style="background:var(${EVENT_COLORS[e.type] || '--mute'})"></u>${esc(e.type[0] + e.type.slice(1).toLowerCase())} ${hhmm(e.start_min)}–${hhmm(e.end_min)}</span>`).join('');
+            const graph = curve.points.length ? `<div class="chart"><canvas id="pop-bb"></canvas></div><div class="legend">${legend}</div>` : '<p>No curve stored for this day yet. Select <b>Sync now</b> to load it.</p>';
+            showPopup('Stress', `${day(date)}${partial ? ', day not finished: totals so far' : ''}`, `<div class="tiles">${tiles}</div>
+  <section><h3>Time in each stress band</h3><p>Garmin's estimate from the watch, as share of the time it recorded.</p>${bands}</section>
+  <section><h3>Body battery through the day</h3><p>This is body battery, not stress: Garmin's Personal API has no stress readings through the day. Shaded periods are the ones Garmin flagged, including stress periods when there are any.</p>${graph}</section>`);
+            if (!$('#pop-bb')) return;
+            const shade = {
+                id: 'events', beforeDatasetsDraw(c) {
+                    const { ctx, chartArea: a, scales: { x } } = c;
+                    ctx.save(); ctx.globalAlpha = .18;
+                    curve.events.forEach(e => { ctx.fillStyle = css(EVENT_COLORS[e.type] || '--mute'); ctx.fillRect(x.getPixelForValue(e.start_min), a.top, x.getPixelForValue(e.end_min) - x.getPixelForValue(e.start_min), a.bottom - a.top) });
+                    ctx.restore();
+                }
+            };
+            popCharts.push(new Chart($('#pop-bb'), {
+                type: 'line', plugins: [shade],
+                data: { datasets: [{ data: curve.points.map(([x, y]) => ({ x, y })), borderColor: css('--steps'), backgroundColor: css('--steps'), borderWidth: 2, pointRadius: 0, pointHitRadius: 10 }] },
+                options: {
+                    maintainAspectRatio: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { title: i => hhmm(i[0].parsed.x), label: c => 'Body battery ' + c.parsed.y } } },
+                    scales: { x: { type: 'linear', min: 0, max: Math.max(1440, curve.points.at(-1)[0]), ticks: { stepSize: 180, callback: hhmm } }, y: { min: 0, max: 100 } }
+                }
+            }));
         }
 
         function openRun(a) {
@@ -485,21 +550,21 @@
                 ['Elevation', r.elevation_gain_m != null && `+${r.elevation_gain_m} / −${r.elevation_loss_m ?? '–'} m`],
                 ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
             ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
-            const dlg = $('#run');
-            dlg.innerHTML = `<div class="run">
-  <header><div><h2 id="run-title">${esc(a.name || a.type)}</h2><span class="bar">${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}</span></div><button autofocus onclick="$('#run').close()">Close</button></header>
-  <div class="tiles">${tiles}</div>${zoneRows(r)}${splitRows(r)}</div>`;
-            dlg.showModal();
+            showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${zoneRows(r)}${splitRows(r)}`);
             if (!$('#run-pace')) return;
             const opt = (extra = {}) => ({ maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: extra.tooltip }, scales: { x: { title: { display: true, text: 'km' } }, y: extra.y || {} } });
-            const line = (id, key, c, extra) => runCharts.push(new Chart($('#' + id), { type: 'line', data: { labels: r.splits.map(s => s.km), datasets: [{ data: r.splits.map(s => s[key]), borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 3, tension: .25, spanGaps: true }] }, options: opt(extra) }));
+            const line = (id, key, c, extra) => popCharts.push(new Chart($('#' + id), { type: 'line', data: { labels: r.splits.map(s => s.km), datasets: [{ data: r.splits.map(s => s[key]), borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 3, tension: .25, spanGaps: true }] }, options: opt(extra) }));
             line('run-pace', 'pace_min_per_km', '--deep', { y: { reverse: true, ticks: { callback: pace } }, tooltip: { callbacks: { label: c => pace(c.parsed.y) + ' /km' } } });
             line('run-hr', 'avg_hr', '--heart', { tooltip: { callbacks: { label: c => c.parsed.y + ' bpm' } } });
         }
 
-        $('#run').onclose = () => { runCharts.forEach(c => c.destroy()); runCharts = [] };
-        $('#run').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
-        $('#app').onclick = e => { const tr = e.target.closest('tr[data-run]'); if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run)) };
+        $('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = [] };
+        $('#pop').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
+        $('#app').onclick = e => {
+            const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]');
+            if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run));
+            if (s) openStress(s.dataset.stress).catch(err => say(err.message));
+        };
         $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
         $('#range').onchange = () => load().catch(e => say(e.message));
         $('#sync').onclick = async e => {

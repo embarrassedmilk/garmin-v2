@@ -54,6 +54,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Charts: sleep stages + score, resting HR + HRV, steps, stress + body battery, training load
 - [x] Workouts table
 - [x] Run pop-up: summary stats, time in each zone, km splits
+- [x] Stress pop-up: time in each band, body battery curve (the API has no stress readings through the day)
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
 - [x] Export for Claude button (`GET /api/export`)
 - [ ] Stat row: show each value against my own baseline

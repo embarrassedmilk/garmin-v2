@@ -7,7 +7,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -396,7 +396,107 @@ class RunDetailsSyncTest(TempDbCase):
         self.assertEqual(self.sync_once(client)["counts"]["run_details"], 1)
 
 
+def utc_ms(text):
+    return int(datetime.fromisoformat(text).replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+BODY_BATTERY_DAY = {
+    "date": "2026-11-02", "startTimestampGMT": "2026-11-01T23:00:00.0", "startTimestampLocal": "2026-11-02T00:00:00.0",
+    "bodyBatteryValuesArray": [
+        [utc_ms("2026-11-01T23:00:00"), 40], [utc_ms("2026-11-02T00:00:00"), 50], [utc_ms("2026-11-02T00:00:00"), 50],
+        [utc_ms("2026-11-02T00:15:00"), None], [utc_ms("2026-11-02T22:45:00"), 20],
+    ],
+    "bodyBatteryActivityEvent": [
+        {"eventType": "SLEEP", "eventStartTimeGmt": "2026-11-01T22:00:00.0", "timezoneOffset": 3600000,
+         "durationInMilliseconds": 8 * 3600000, "shortFeedback": PRIVATE_NAME},
+        {"eventType": "ACTIVITY", "eventStartTimeGmt": "2026-11-02T17:00:00.0", "timezoneOffset": 3600000,
+         "durationInMilliseconds": 30 * 60000},
+        {"eventType": "SLEEP", "eventStartTimeGmt": "2026-11-02T22:00:00.0", "timezoneOffset": 3600000,
+         "durationInMilliseconds": 8 * 3600000},
+        {"eventType": "ACTIVITY", "eventStartTimeGmt": "2026-11-03T00:00:00.0", "timezoneOffset": 3600000,
+         "durationInMilliseconds": 60000},
+    ],
+}
+
+
+class StressDetailTest(TempDbCase):
+    def test_stress_bands_are_stored_in_seconds(self):
+        row = sync.parse_summary({"calendarDate": YESTERDAY, "stress": {
+            "avgLevel": 30, "maxLevel": 88, "restDurationInMillis": 3600000, "lowStressDurationInMillis": 1800000,
+            "mediumStressDurationInMillis": 60000, "highStressDurationInMillis": 0, "activityDurationInMillis": 120000,
+            "uncategorizedDurationInMillis": 1000}})
+        self.assertEqual((row["stress_avg"], row["stress_max"]), (30, 88))
+        self.assertEqual((row["stress_rest_s"], row["stress_low_s"], row["stress_med_s"], row["stress_high_s"],
+                          row["stress_activity_s"], row["stress_uncat_s"]), (3600, 1800, 60, 0, 120, 1))
+
+    def test_missing_stress_stays_null(self):
+        row = sync.parse_summary({"calendarDate": YESTERDAY})
+        self.assertIsNone(row["stress_rest_s"])
+
+    def test_curve_uses_local_minutes_and_drops_repeats_and_nulls(self):
+        curve = json.loads(sync.parse_body_battery(BODY_BATTERY_DAY)["curve"])
+        self.assertEqual(curve["points"], [[0, 40], [60, 50], [1425, 20]])
+
+    def test_events_are_clipped_to_the_day_and_keep_no_feedback_text(self):
+        curve = json.loads(sync.parse_body_battery(BODY_BATTERY_DAY)["curve"])
+        self.assertEqual(curve["events"], [
+            {"type": "SLEEP", "start_min": 0, "end_min": 420},
+            {"type": "ACTIVITY", "start_min": 1080, "end_min": 1110},
+            {"type": "SLEEP", "start_min": 1380, "end_min": 1440},
+        ])
+        self.assertNotIn(PRIVATE_NAME, json.dumps(curve))
+
+    def test_day_without_timestamps_has_no_curve(self):
+        self.assertIsNone(sync.parse_body_battery({"date": YESTERDAY})["curve"])
+
+    def test_sync_stores_the_curve_and_api_serves_it(self):
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get_daily_summaries.return_value = {}
+        client.get_daily_sleep_summaries.return_value = []
+        client.get_daily_hrv_summaries.return_value = {}
+        client.search_activities.return_value = []
+        client.get_daily_body_battery.return_value = [BODY_BATTERY_DAY]
+        with patch.object(sync, "PersonalApiAuthenticator", MagicMock()), \
+                patch.object(sync, "GarminPersonalApiClient", return_value=client), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            result = sync.run_sync(days=1)
+        self.assertEqual((result["errors"], result["counts"]["body_battery"]), ([], 1))
+        self.assertEqual(client.get_daily_body_battery.call_args.kwargs, {"chunks": 96})
+        api = TestClient(app)
+        self.assertEqual(api.get("/api/body-battery/2026-11-02").json()["points"][1], [60, 50])
+        self.assertEqual(api.get("/api/body-battery/2020-01-01").json(), {"points": [], "events": []})
+
+    def test_failing_body_battery_does_not_stop_the_sync(self):
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get_daily_summaries.return_value = {"data": [{"calendarDate": YESTERDAY}]}
+        client.get_daily_sleep_summaries.return_value = []
+        client.get_daily_hrv_summaries.return_value = {}
+        client.search_activities.return_value = []
+        client.get_daily_body_battery.side_effect = RuntimeError("Garmin down")
+        with patch.object(sync, "PersonalApiAuthenticator", MagicMock()), \
+                patch.object(sync, "GarminPersonalApiClient", return_value=client), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            result = sync.run_sync(days=1)
+        self.assertEqual(result["counts"]["daily_summaries"], 1)
+        self.assertIn("body_battery", result["errors"][0])
+
+
 class MigrationTest(TempDbCase):
+    def test_old_daily_table_gets_stress_columns_and_keeps_rows(self):
+        db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        old = sqlite3.connect(db.DB_PATH)
+        old.execute("CREATE TABLE daily (date TEXT PRIMARY KEY NOT NULL, stress_avg REAL)")
+        old.execute("INSERT INTO daily VALUES ('2026-11-01', 30)")
+        old.commit()
+        old.close()
+        c = db.connect()
+        self.addCleanup(c.close)
+        row = dict(c.execute("SELECT * FROM daily").fetchone())
+        self.assertEqual(row["stress_avg"], 30)
+        self.assertIsNone(row["stress_rest_s"])
+
     def test_old_database_gets_new_columns_and_keeps_rows(self):
         db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         old = sqlite3.connect(db.DB_PATH)

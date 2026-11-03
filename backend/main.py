@@ -30,6 +30,14 @@ def activities(limit: int = 100):
     return [{**r, "run": run_fields(r) if r["type"] in db.RUN_SUBTYPES else None} for r in map(dict, rows)]
 
 
+@app.get("/api/body-battery/{day}")
+def body_battery(day: str):
+    """One day's curve. Empty until a sync has stored it."""
+    with db.connect() as c:
+        row = c.execute("SELECT curve FROM body_battery WHERE date=?", (day,)).fetchone()
+    return json.loads(row["curve"]) if row and row["curve"] else {"points": [], "events": []}
+
+
 @app.get("/api/status")
 def status():
     with db.connect() as c:

@@ -21,9 +21,14 @@ SCHEMA = (
     "name TEXT, duration_s REAL, distance_m REAL, avg_hr REAL, max_hr REAL, calories REAL, "
     "te_aerobic REAL, te_anaerobic REAL, training_load REAL);"
     "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);"
+    "CREATE TABLE IF NOT EXISTS body_battery (date TEXT PRIMARY KEY NOT NULL, curve TEXT);"  # JSON, kept out of daily to keep /api/daily small
 )
 
 # Added after the first release, so existing databases need them too.
+ADDED_DAILY_COLS = {
+    "stress_max": "REAL", "stress_rest_s": "REAL", "stress_low_s": "REAL", "stress_med_s": "REAL",
+    "stress_high_s": "REAL", "stress_activity_s": "REAL", "stress_uncat_s": "REAL",
+}
 ADDED_ACTIVITY_COLS = {
     "elevation_gain_m": "REAL", "elevation_loss_m": "REAL", "avg_gap_mps": "REAL",
     "avg_cadence_spm": "REAL", "avg_stride_cm": "REAL",
@@ -40,10 +45,11 @@ def connect() -> sqlite3.Connection:
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
-    existing = {r["name"] for r in c.execute("PRAGMA table_info(activities)")}
-    for col, kind in ADDED_ACTIVITY_COLS.items():
-        if col not in existing:
-            c.execute(f"ALTER TABLE activities ADD COLUMN {col} {kind}")
+    for table, added in (("daily", ADDED_DAILY_COLS), ("activities", ADDED_ACTIVITY_COLS)):
+        existing = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        for col, kind in added.items():
+            if col not in existing:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
     return c
 
 

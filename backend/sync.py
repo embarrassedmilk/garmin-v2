@@ -7,7 +7,7 @@ import io
 import json
 import os
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from garmin_fit_sdk import Decoder, Stream
@@ -17,6 +17,8 @@ from . import db
 
 load_dotenv()
 CHUNK_DAYS = 28  # Garmin caps most range endpoints at 28-31 days per request
+BODY_BATTERY_CHUNKS = 96  # readings per day: one every 15 minutes
+DAY_MIN = 24 * 60
 
 
 def chunks(start: date, end: date, n: int = CHUNK_DAYS):
@@ -35,7 +37,12 @@ def g(d, *path):
     return d
 
 
+def seconds(ms):
+    return None if ms is None else ms / 1000
+
+
 def parse_summary(d: dict) -> dict:
+    stress = d.get("stress")
     return {
         "date": d["calendarDate"],
         "steps": g(d, "movement", "steps", "value"),
@@ -47,6 +54,13 @@ def parse_summary(d: dict) -> dict:
         "hr_min": g(d, "heartRate", "minValue"),
         "hr_max": g(d, "heartRate", "maxValue"),
         "stress_avg": g(d, "stress", "avgLevel"),
+        "stress_max": g(d, "stress", "maxLevel"),
+        "stress_rest_s": seconds(g(stress, "restDurationInMillis")),
+        "stress_low_s": seconds(g(stress, "lowStressDurationInMillis")),
+        "stress_med_s": seconds(g(stress, "mediumStressDurationInMillis")),
+        "stress_high_s": seconds(g(stress, "highStressDurationInMillis")),
+        "stress_activity_s": seconds(g(stress, "activityDurationInMillis")),
+        "stress_uncat_s": seconds(g(stress, "uncategorizedDurationInMillis")),
         "bb_min": g(d, "bodyBattery", "minValue"),
         "bb_max": g(d, "bodyBattery", "maxValue"),
         "bb_charged": g(d, "bodyBattery", "chargedValue"),
@@ -73,6 +87,28 @@ def parse_sleep(d: dict) -> dict:
 
 def parse_hrv(d: dict) -> dict:
     return {"date": d["calendarDate"], "hrv_last_night": d.get("lastNightAvg"), "hrv_weekly": d.get("weeklyAvg")}
+
+
+def parse_body_battery(d: dict) -> dict:
+    """The day's curve, in minutes after local midnight. Keeps event types and times, not Garmin's feedback text."""
+    if not (d.get("startTimestampGMT") and d.get("startTimestampLocal")):
+        return {"date": d.get("date"), "curve": None}
+    parse = lambda s: datetime.fromisoformat(s[:19])
+    start_gmt, start_local = parse(d["startTimestampGMT"]), parse(d["startTimestampLocal"])
+    first_min = start_local.hour * 60 + start_local.minute
+    epoch_ms = start_gmt.replace(tzinfo=timezone.utc).timestamp() * 1000
+    # Garmin repeats some timestamps, always with the same level.
+    levels = {ts: level for ts, level in d.get("bodyBatteryValuesArray") or [] if level is not None}
+    points = [[round((ts - epoch_ms) / 60000) + first_min, level] for ts, level in sorted(levels.items())]
+    events = []
+    for e in d.get("bodyBatteryActivityEvent") or []:
+        local = parse(e["eventStartTimeGmt"]) + timedelta(milliseconds=e.get("timezoneOffset") or 0)
+        begin = (local - start_local).total_seconds() / 60 + first_min
+        end = begin + (e.get("durationInMilliseconds") or 0) / 60000
+        if end > 0 and begin < DAY_MIN:  # sleep can start the evening before: keep only the part on this day
+            events.append({"type": e.get("eventType"), "start_min": round(max(begin, 0)), "end_min": round(min(end, DAY_MIN))})
+    events.sort(key=lambda e: e["start_min"])
+    return {"date": d.get("date"), "curve": json.dumps({"points": points, "events": events})}
 
 
 def parse_activity(a: dict) -> dict:
@@ -185,6 +221,8 @@ def run_sync(days: int = 28) -> dict:
         pull("sleep", lambda s, e: client.get_daily_sleep_summaries(s, e) or [], parse_sleep, "daily", "date")
         pull("hrv", lambda s, e: (client.get_daily_hrv_summaries(s, e) or {}).get("hrvSummaries") or [],
              parse_hrv, "daily", "date")
+        pull("body_battery", lambda s, e: client.get_daily_body_battery(s, e, chunks=BODY_BATTERY_CHUNKS) or [],
+             parse_body_battery, "body_battery", "date")
 
         def activities(s, e):
             page, out = 0, []
