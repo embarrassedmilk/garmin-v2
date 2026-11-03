@@ -51,7 +51,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 
 ### 4. Dashboard v1
 - [x] Sleep hero, stat row (resting HR, HRV, steps, stress, body battery)
-- [x] Charts: sleep stages + score, resting HR + HRV, steps, stress + body battery, training load
+- [x] Charts: sleep stages + score, resting HR + HRV, steps, stress, body battery, training load
 - [x] Workouts table, with a tab per workout type
 - [x] Run pop-up: summary stats, time in each zone, km splits
 - [x] Stress pop-up: time in each band, body battery curve (the API has no stress readings through the day)
