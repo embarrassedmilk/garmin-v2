@@ -110,6 +110,48 @@ class SyncTest(TempDbCase):
         self.assertEqual(len(result["errors"]), 2)  # 60 days is 3 windows; both older ones failed
         self.assertIn("daily_summaries", result["errors"][0])
 
+    def meta(self, key):
+        c = db.connect()
+        self.addCleanup(c.close)
+        return db.get_meta(c, key)
+
+    def test_failed_login_is_recorded_and_raised(self):
+        auth = MagicMock()
+        auth.return_value.__enter__.return_value.obtain_token.side_effect = RuntimeError("key expired")
+        with patch.object(sync, "PersonalApiAuthenticator", auth), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            with self.assertRaises(RuntimeError):
+                sync.run_sync(days=1)
+
+        status = TestClient(app).get("/api/status").json()
+        self.assertIn("key expired", status["errors"][0])
+        self.assertIsNone(status["last_ok_at"])
+
+    def test_missing_key_is_recorded_and_raised(self):
+        with patch.object(sync.os, "getenv", return_value=None):
+            with self.assertRaises(RuntimeError):
+                sync.run_sync(days=1)
+        self.assertIn("GARMIN_API_KEY", self.meta("last_sync"))
+
+    def test_only_a_run_that_stores_data_counts_as_success(self):
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.get_daily_summaries.side_effect = RuntimeError("Garmin down")
+        client.get_daily_sleep_summaries.side_effect = RuntimeError("Garmin down")
+        client.get_daily_hrv_summaries.side_effect = RuntimeError("Garmin down")
+        client.search_activities.side_effect = RuntimeError("Garmin down")
+
+        with patch.object(sync, "PersonalApiAuthenticator", MagicMock()), \
+                patch.object(sync, "GarminPersonalApiClient", return_value=client), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            sync.run_sync(days=1)
+            self.assertIsNone(self.meta("last_ok_at"))
+
+            client.get_daily_summaries.side_effect = None
+            client.get_daily_summaries.return_value = {"data": [{"calendarDate": YESTERDAY}]}
+            sync.run_sync(days=1)
+            self.assertIsNotNone(self.meta("last_ok_at"))
+
 
 class ExportTest(TempDbCase):
     def test_workouts_are_included(self):

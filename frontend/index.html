@@ -279,6 +279,7 @@
         const hm = s => s == null ? '–' : `${Math.floor(s / 3600)}h ${String(Math.round(s % 3600 / 60)).padStart(2, '0')}m`;
         const num = (v, d = 0) => v == null ? '–' : Number(v).toFixed(d);
         const day = d => new Date(d + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const STALE_MS = 36 * 3600 * 1000;
         let charts = [], DAILY = [], ACTS = [];
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
@@ -288,8 +289,12 @@
             const days = +$('#range').value;
             [DAILY, ACTS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities?limit=200')]);
             const st = await api('/api/status');
-            $('#synced').textContent = st ? 'Synced ' + new Date(st.synced_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Not synced yet';
-            if (st && st.errors.length) say('Some data could not be synced: ' + st.errors.join(' | '));
+            const okAt = st && st.last_ok_at && new Date(st.last_ok_at), okText = okAt && okAt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+            $('#synced').textContent = okAt ? 'Synced ' + okText : 'Not synced yet';
+            const notes = [];
+            if (okAt && Date.now() - okAt > STALE_MS) notes.push(`Data is out of date: the last successful sync was ${okText}.`);
+            if (st && st.errors.length) notes.push('Some data could not be synced: ' + st.errors.join(' | '));
+            say(notes.join(' '));
             render();
         }
 

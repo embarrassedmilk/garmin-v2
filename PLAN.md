@@ -46,6 +46,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] `backend/sync.py`: 28-day chunking, per-endpoint error isolation
 - [x] Manual sync: button, `POST /api/sync`, `python -m backend.sync`
 - [ ] Scheduled daily sync (re-sync today and yesterday; today's row is partial)
+- [x] Stale-data banner and failed logins shown in the dashboard
 - [ ] Longer backfill once history depth is known
 
 ### 4. Dashboard v1

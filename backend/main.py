@@ -34,7 +34,8 @@ def activities(limit: int = 100):
 def status():
     with db.connect() as c:
         raw = db.get_meta(c, "last_sync")
-    return json.loads(raw) if raw else None
+        last_ok_at = db.get_meta(c, "last_ok_at")
+    return {**json.loads(raw), "last_ok_at": last_ok_at} if raw else None
 
 
 @app.post("/api/sync")

@@ -89,17 +89,34 @@ def parse_activity(a: dict) -> dict:
     }
 
 
+def _record(c, days: int, counts: dict, errors: list) -> dict:
+    """Save the outcome of a run. last_ok_at only moves when data actually arrived."""
+    now = datetime.now().isoformat(timespec="seconds")
+    result = {"synced_at": now, "days": days, "counts": counts, "errors": errors}
+    db.set_meta(c, "last_sync", json.dumps(result))
+    if any(counts.values()):
+        db.set_meta(c, "last_ok_at", now)
+    c.commit()
+    c.close()
+    return result
+
+
 def run_sync(days: int = 28) -> dict:
-    key = os.getenv("GARMIN_API_KEY")
-    if not key:
-        raise RuntimeError("GARMIN_API_KEY is missing. Put it in .env.")
     end = date.today()
     start = end - timedelta(days=days - 1)
     counts, errors = {}, []
-
-    with PersonalApiAuthenticator() as auth:
-        token = auth.obtain_token(key)
     c = db.connect()
+
+    try:
+        key = os.getenv("GARMIN_API_KEY")
+        if not key:
+            raise RuntimeError("GARMIN_API_KEY is missing. Put it in .env.")
+        with PersonalApiAuthenticator() as auth:
+            token = auth.obtain_token(key)
+    except Exception as ex:  # e.g. an expired key: record it so the dashboard can show it
+        _record(c, days, counts, [f"login: {type(ex).__name__}: {str(ex)[:200]}"])
+        raise
+
     with GarminPersonalApiClient(token.access_token) as client:
 
         def pull(name, fetch, parse, table, key_col):
@@ -114,6 +131,7 @@ def run_sync(days: int = 28) -> dict:
                         n += 1
                 except Exception as ex:  # keep going: one failing window shouldn't block the rest
                     errors.append(f"{name} {s} to {e}: {type(ex).__name__}: {str(ex)[:200]}")
+                c.commit()  # don't hold the write lock across network calls
             counts[name] = n
 
         pull("daily_summaries", lambda s, e: (client.get_daily_summaries(s, e) or {}).get("data") or [],
@@ -133,11 +151,7 @@ def run_sync(days: int = 28) -> dict:
 
         pull("activities", activities, parse_activity, "activities", "id")
 
-    result = {"synced_at": datetime.now().isoformat(timespec="seconds"), "days": days, "counts": counts, "errors": errors}
-    db.set_meta(c, "last_sync", json.dumps(result))
-    c.commit()
-    c.close()
-    return result
+    return _record(c, days, counts, errors)
 
 
 if __name__ == "__main__":
