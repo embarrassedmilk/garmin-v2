@@ -28,6 +28,7 @@ SCHEMA = (
 ADDED_DAILY_COLS = {
     "stress_max": "REAL", "stress_rest_s": "REAL", "stress_low_s": "REAL", "stress_med_s": "REAL",
     "stress_high_s": "REAL", "stress_activity_s": "REAL", "stress_uncat_s": "REAL",
+    "sleep_details": "TEXT",  # JSON: score factors, bed and wake times, respiration
 }
 ADDED_ACTIVITY_COLS = {
     "elevation_gain_m": "REAL", "elevation_loss_m": "REAL", "avg_gap_mps": "REAL",

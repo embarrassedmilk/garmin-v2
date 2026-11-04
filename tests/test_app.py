@@ -483,6 +483,48 @@ class StressDetailTest(TempDbCase):
         self.assertIn("body_battery", result["errors"][0])
 
 
+SLEEP_NIGHT = {
+    "calendarDate": "2026-10-31", "userProfilePK": 151415740,
+    "sleepStartTimestampLocal": utc_ms("2026-10-30T23:49:49"), "sleepEndTimestampLocal": utc_ms("2026-10-31T06:56:12"),
+    "awakeCount": 0, "averageRespirationValue": 14.0,
+    "sleepScoreFeedback": "POSITIVE_LONG_AND_REFRESHING", "sleepScoreInsight": "NONE",
+    "sleepScores": {
+        "overall": {"value": 87, "qualifierKey": "GOOD"},
+        "stress": {"qualifierKey": "FAIR", "optimalStart": 0.0, "optimalEnd": 15.0},
+        "deepPercentage": {"value": 19, "qualifierKey": "EXCELLENT", "optimalStart": 16.0, "optimalEnd": 33.0, "idealStartInSeconds": 4093.28},
+    },
+    "sleepNeed": {"userProfilePk": 151415740, "deviceId": 3605279168, "actual": 490},
+}
+
+
+class SleepDetailTest(TempDbCase):
+    def test_keeps_factors_and_times_but_no_identifiers(self):
+        raw = sync.parse_sleep(SLEEP_NIGHT)["sleep_details"]
+        d = json.loads(raw)
+        self.assertEqual((d["start"], d["end"]), ("23:49", "06:56"))
+        self.assertEqual(d["scores"]["overall"]["value"], 87)
+        self.assertEqual(d["scores"]["stress"]["optimalEnd"], 15.0)
+        self.assertNotIn("151415740", raw)
+        self.assertNotIn("3605279168", raw)
+
+    def test_night_without_scores_keeps_stored_details(self):
+        c = db.connect()
+        self.addCleanup(c.close)
+        db.upsert(c, "daily", "date", sync.parse_sleep(SLEEP_NIGHT))
+        db.upsert(c, "daily", "date", sync.parse_sleep({"calendarDate": "2026-10-31"}))
+        stored = c.execute("SELECT sleep_details FROM daily").fetchone()["sleep_details"]
+        self.assertEqual(json.loads(stored)["scores"]["overall"]["value"], 87)
+
+    def test_details_reach_the_dashboard_but_not_the_export(self):
+        c = db.connect()
+        db.upsert(c, "daily", "date", {**sync.parse_sleep(SLEEP_NIGHT), "date": YESTERDAY})
+        c.commit()
+        c.close()
+        rows = TestClient(app).get("/api/daily").json()
+        self.assertEqual(json.loads(rows[-1]["sleep_details"])["end"], "06:56")
+        self.assertNotIn("sleep_details", json.dumps(build_export(28)))
+
+
 class MigrationTest(TempDbCase):
     def test_old_daily_table_gets_stress_columns_and_keeps_rows(self):
         db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)

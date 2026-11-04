@@ -345,6 +345,19 @@
             opacity: .35
         }
 
+        .big .link {
+            color: var(--mute)
+        }
+
+        .big .link:hover {
+            color: var(--ink)
+        }
+
+        .low {
+            color: var(--heart);
+            font-weight: 600
+        }
+
         [data-stress] {
             cursor: pointer
         }
@@ -498,7 +511,7 @@
             const t = L[0], stressDay = t.stress_avg != null ? t.date : (L.find(r => r.stress_avg != null) || {}).date;
             app.innerHTML = `
   <div class="hero"><h2>Sleep, night ending ${sl.date ? day(sl.date) : '–'}</h2>
-    <div class="big"><b>${hm(sl.sleep_s)}</b><span>Garmin sleep score ${num(sl.sleep_score)}</span></div>
+    <div class="big"><b>${hm(sl.sleep_s)}</b>${sl.sleep_score != null ? `<button class="link" data-sleep="${sl.date}">Garmin sleep score ${num(sl.sleep_score)}</button>` : `<span>Garmin sleep score –</span>`}</div>
     <div class="stages" role="img" aria-label="Sleep stages">${seg('deep_s', '--deep')}${seg('light_s', '--light')}${seg('rem_s', '--rem')}${seg('awake_s', '--awake')}</div>
     <div class="legend"><span><u style="background:var(--deep)"></u>Deep ${hm(sl.deep_s)}</span><span><u style="background:var(--light)"></u>Light ${hm(sl.light_s)}</span><span><u style="background:var(--rem)"></u>REM ${hm(sl.rem_s)}</span><span><u style="background:var(--awake)"></u>Awake ${hm(sl.awake_s)}</span></div></div>
   <div class="stats">
@@ -593,6 +606,30 @@
             }));
         }
 
+        const SLEEP_FACTORS = [['totalDuration', 'Duration'], ['stress', 'Stress'], ['awakeCount', 'Times awake'], ['restlessness', 'Restlessness'], ['deepPercentage', 'Deep sleep'], ['lightPercentage', 'Light sleep'], ['remPercentage', 'REM sleep']];
+        const sentence = s => s[0].toUpperCase() + s.slice(1).toLowerCase().replaceAll('_', ' ');
+
+        function openSleep(date) {
+            const r = DAILY.find(d => d.date === date), d = JSON.parse(r.sleep_details || '{}'), S = d.scores || {};
+            const stage = (k, secs) => S[k]?.value != null ? `${S[k].value}% · ${hm(secs)}` : hm(secs);
+            const yours = { totalDuration: hm(r.sleep_s), stress: num(r.sleep_stress), awakeCount: num(d.awake_count), restlessness: '–', deepPercentage: stage('deepPercentage', r.deep_s), lightPercentage: stage('lightPercentage', r.light_s), remPercentage: stage('remPercentage', r.rem_s) };
+            const optimal = (k, f) => {
+                if (k === 'restlessness' || f.optimalStart == null) return '–';  // restlessness has a range but no value to compare with
+                if (k === 'totalDuration') return f.optimalStart === f.optimalEnd ? hm(f.optimalStart) : `${hm(f.optimalStart)}–${hm(f.optimalEnd)}`;
+                return `${f.optimalStart}–${f.optimalEnd}${k.endsWith('Percentage') ? '%' : ''}`;
+            };
+            const rows = SLEEP_FACTORS.filter(([k]) => S[k]).map(([k, label]) => {
+                const q = S[k].qualifierKey;
+                return `<tr><td>${label}</td><td>${yours[k]}</td><td>${optimal(k, S[k])}</td><td${q === 'FAIR' || q === 'POOR' ? ' class="low"' : ''}>${q ? sentence(q) : '–'}</td></tr>`;
+            }).join('');
+            const score = `${num(r.sleep_score)}${S.overall?.qualifierKey ? ' · ' + sentence(S.overall.qualifierKey) : ''}`;
+            const tiles = [['Score', score], ['Sleep start', d.start], ['Wake up', d.end], ['Time asleep', hm(r.sleep_s)], ['Average HR', r.sleep_hr != null && num(r.sleep_hr) + ' bpm'], ['Respiration', d.resp_avg != null && num(d.resp_avg) + ' brpm'], ['SpO2', r.sleep_spo2 != null && num(r.sleep_spo2) + '%']].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+            const notes = [d.feedback, d.insight].filter(n => n && n !== 'NONE').map(n => esc(sentence(n.replace(/^(POSITIVE|NEGATIVE|NEUTRAL)_/, '')))).join('. ');
+            const table = rows ? `<div class="wrap"><table><thead><tr><th>Factor</th><th>You</th><th>Optimal</th><th>Rating</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p>No breakdown stored for this night yet. Select <b>Sync now</b> to load it.</p>';
+            showPopup('Sleep score', `Night ending ${day(date)}`, `<div class="tiles">${tiles}</div>
+  <section><h3>What went into the score</h3><p>${notes ? `Garmin's summary: ${notes}. ` : ''}Garmin rates each factor but doesn't say how many points each one adds or removes.</p>${table}</section>`);
+        }
+
         function openRun(a) {
             const r = a.run, km = a.distance_m / 1000;
             const tiles = [
@@ -623,6 +660,8 @@
             }
             if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run));
             if (s) openStress(s.dataset.stress).catch(err => say(err.message));
+            const sleep = e.target.closest('[data-sleep]');
+            if (sleep) openSleep(sleep.dataset.sleep);
         };
         $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
         $('#range').onchange = () => load().catch(e => say(e.message));

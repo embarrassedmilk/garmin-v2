@@ -57,6 +57,8 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Stress pop-up: time in each band, body battery curve (the API has no stress readings through the day)
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
 - [x] Export for Claude button (`GET /api/export`)
+- [x] Sleep pop-up: detailed sleep score breakdown when clicking the sleep score
+- [ ] Run pop-up: map of the route. GPS is currently never saved (`sync.py` discards it), so this needs a decision on storing it
 - [ ] Stat row: show each value against my own baseline
 - [ ] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Start early: tags can't be collected reliably after the fact
 
@@ -81,6 +83,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - Which Gemini / Claude model for insights, and what each costs (API credits are separate from a Claude subscription).
 - How much history to backfill.
 - Which insights are worth showing every week.
+- How to open the dashboard easily on my phone: a mobile app, free hosting (e.g. Vercel), or something else? Hosting would conflict with the current "health data stays local" rule, and the SQLite file and Garmin key would need a home.
 
 ## Notes / log
 - 2026-10-31: first explore run; all 15 endpoints worked. Chose Garmin's official client over third-party `gcpapi-sync`.

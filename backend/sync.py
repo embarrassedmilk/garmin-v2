@@ -70,6 +70,28 @@ def parse_summary(d: dict) -> dict:
     }
 
 
+def local_clock(ms):
+    """Garmin's "local" timestamps are the local clock written as if it were UTC."""
+    return None if ms is None else datetime.fromtimestamp(ms / 1000, timezone.utc).strftime("%H:%M")
+
+
+def parse_sleep_details(d: dict):
+    """Only named fields: the summary's sleepNeed and sleepAlignment hold profile and device IDs."""
+    scores = d.get("sleepScores")
+    if not scores:
+        return None
+    fields = ("qualifierKey", "value", "optimalStart", "optimalEnd")
+    return json.dumps({
+        "start": local_clock(d.get("sleepStartTimestampLocal")),
+        "end": local_clock(d.get("sleepEndTimestampLocal")),
+        "awake_count": d.get("awakeCount"),
+        "resp_avg": d.get("averageRespirationValue"),
+        "feedback": d.get("sleepScoreFeedback"),
+        "insight": d.get("sleepScoreInsight"),
+        "scores": {k: {f: v.get(f) for f in fields} for k, v in scores.items() if isinstance(v, dict)},
+    })
+
+
 def parse_sleep(d: dict) -> dict:
     return {
         "date": d["calendarDate"],  # wake-up date
@@ -82,6 +104,7 @@ def parse_sleep(d: dict) -> dict:
         "sleep_hr": d.get("avgHeartRate"),
         "sleep_stress": d.get("avgSleepStress"),
         "sleep_spo2": d.get("averageSpO2Value"),
+        "sleep_details": parse_sleep_details(d),
     }
 
 
