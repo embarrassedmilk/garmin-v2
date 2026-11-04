@@ -30,6 +30,14 @@ def activities(limit: int = 100):
     return [{**r, "run": run_fields(r) if r["type"] in db.RUN_SUBTYPES else None} for r in map(dict, rows)]
 
 
+@app.get("/api/activities/{activity_id}/route")
+def route(activity_id: int):
+    """A run's GPS track. Empty if the file had no GPS or no sync has stored it yet."""
+    with db.connect() as c:
+        row = c.execute("SELECT points FROM run_routes WHERE id=?", (activity_id,)).fetchone()
+    return {"points": json.loads(row["points"]) if row else []}
+
+
 @app.get("/api/body-battery/{day}")
 def body_battery(day: str):
     """One day's curve. Empty until a sync has stored it."""

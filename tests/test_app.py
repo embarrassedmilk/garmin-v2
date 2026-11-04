@@ -385,6 +385,41 @@ class RunDetailsSyncTest(TempDbCase):
         self.assertEqual(self.sync_once(client)["counts"]["run_details"], 0)
         self.assertEqual(client.download_activity.call_count, 3)
 
+    def test_route_is_converted_and_thinned(self):
+        half_circle = 2**31 // 2  # 90 degrees in semicircles
+        records = [{"position_lat": half_circle, "position_long": -half_circle}, {"position_lat": None, "position_long": None}, {}]
+        self.assertEqual(sync.parse_route({"record_mesgs": records}), [[90.0, -90.0]])
+        self.assertEqual(sync.parse_route({}), [])
+        many = [{"position_lat": i, "position_long": i} for i in range(6000)]
+        route = sync.parse_route({"record_mesgs": many})
+        self.assertLessEqual(len(route), sync.ROUTE_MAX_POINTS)
+        self.assertEqual(route[0], [0.0, 0.0])
+        self.assertEqual(route[-1], [round(5999 * sync.SEMICIRCLE_DEG, 5)] * 2)
+
+    def test_route_is_stored_served_and_kept_out_of_activities_and_export(self):
+        marker = 11.11111
+        client = MagicMock()
+        client.search_activities.return_value = [self.activity(1, "running")]
+        with patch.object(sync, "parse_route", return_value=[[marker, marker], [marker, marker]]):
+            self.sync_once(client)
+        api = TestClient(app)
+        self.assertEqual(api.get("/api/activities/1/route").json(), {"points": [[marker, marker], [marker, marker]]})
+        self.assertEqual(api.get("/api/activities/999/route").json(), {"points": []})
+        self.assertNotIn(str(marker), api.get("/api/activities").text)
+        self.assertNotIn(str(marker), api.get("/api/export").text)
+
+    def test_run_synced_before_routes_gets_one_more_download(self):
+        c = db.connect()
+        db.upsert(c, "activities", "id", {"id": 1, "start_local": f"{YESTERDAY} 07:00:00", "type": "running", "run_details": json.dumps({"laps": []})})
+        db.upsert(c, "activities", "id", {"id": 2, "start_local": f"{YESTERDAY} 08:00:00", "type": "running", "run_details": "{}"})  # manual: no file
+        c.commit()
+        c.close()
+        client = MagicMock()
+        client.search_activities.return_value = []
+        self.assertEqual(self.sync_once(client)["counts"]["run_details"], 1)
+        client.download_activity.assert_called_once_with(1)
+        self.assertEqual(self.sync_once(client)["counts"]["run_details"], 0)  # no GPS still counts as done
+
     def test_failed_download_is_recorded_and_retried(self):
         client = MagicMock()
         client.search_activities.return_value = [self.activity(1, "running")]

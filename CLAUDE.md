@@ -10,11 +10,11 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Dump raw Garmin responses for exploration: `uv run python scripts/explore.py [--days N] [--only sleep hrv] [--path /x --param k=v]` (writes `raw_dumps/`, gitignored)
 
 ## Layout
-- `backend/db.py`: SQLite (`data/garmin.db`, gitignored). Tables `daily` (one row per date), `activities`, `body_battery` (one JSON curve per date), `meta` (`last_sync` is the latest attempt; `last_ok_at` is the last run that stored data). `upsert()` never overwrites an existing value with NULL. New `daily` and `activities` columns go in `ADDED_DAILY_COLS` and `ADDED_ACTIVITY_COLS`, which `connect()` adds to existing databases.
-- `backend/sync.py`: pulls daily summaries, sleep summaries, HRV summaries and activities in 28-day chunks, newest first; a failing chunk is recorded in `errors` and does not stop the others. Then downloads the activity file once per run (`run_details`), decodes it in memory with `garmin-fit-sdk`, and keeps only laps, HR zone boundaries and VO2 max: the file also holds GPS and profile data, so it is never saved.
+- `backend/db.py`: SQLite (`data/garmin.db`, gitignored). Tables `daily` (one row per date), `activities`, `body_battery` (one JSON curve per date), `run_routes` (one thinned GPS track per run, `[]` if the file has none), `meta` (`last_sync` is the latest attempt; `last_ok_at` is the last run that stored data). `upsert()` never overwrites an existing value with NULL. New `daily` and `activities` columns go in `ADDED_DAILY_COLS` and `ADDED_ACTIVITY_COLS`, which `connect()` adds to existing databases.
+- `backend/sync.py`: pulls daily summaries, sleep summaries, HRV summaries and activities in 28-day chunks, newest first; a failing chunk is recorded in `errors` and does not stop the others. Then downloads the activity file once per run (`run_details`), decodes it in memory with `garmin-fit-sdk`, and keeps only laps, HR zone boundaries, VO2 max and the route (at most 500 points): the file also holds profile data, so it is never saved.
 - `backend/export.py`: builds the compact, identifier-free JSON summary (`GET /api/export`) that I attach to AI chats for analysis.
-- `backend/main.py`: FastAPI. `GET /api/daily`, `/api/activities` (runs also get `run`: the same fields as the export, from `run_fields()`), `/api/body-battery/{day}`, `/api/status`, `/api/export`; `POST /api/sync`; serves `frontend/`.
-- `frontend/index.html`: single file, Chart.js from a CDN, light/dark via CSS variables. Sleep hero, stat row, charts, workouts table with a tab per workout type (clicking a run opens a pop-up with summary stats, time in each zone, and pace, heart rate and splits per km), stress pop-up from the Average stress tile (time in each band, body battery curve), sleep pop-up from the sleep score (rating per score factor, bed and wake times), range select (7/14/28 days), Sync and Export buttons, banner for sync errors and out-of-date data.
+- `backend/main.py`: FastAPI. `GET /api/daily`, `/api/activities` (runs also get `run`: the same fields as the export, from `run_fields()`), `/api/activities/{id}/route`, `/api/body-battery/{day}`, `/api/status`, `/api/export`; `POST /api/sync`; serves `frontend/`.
+- `frontend/index.html`: single file, Chart.js and Leaflet from a CDN, light/dark via CSS variables. Sleep hero, stat row, charts, workouts table with a tab per workout type (clicking a run opens a pop-up with summary stats, route map, time in each zone, and pace, heart rate and splits per km), stress pop-up from the Average stress tile (time in each band, body battery curve), sleep pop-up from the sleep score (rating per score factor, bed and wake times), range select (7/14/28 days), Sync and Export buttons, banner for sync errors and out-of-date data.
 - `tests/test_app.py`: smoke, sync and export tests.
 - `scripts/explore.py`, `docs/data-notes.md` (still a stub), `PLAN.md`, `.env.example`.
 
@@ -22,7 +22,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Use Garmin's official client (`garmin_personal_api`) for every Garmin call. No hand-rolled HTTP. It handles the key-to-token exchange (tokens last 24h) and caches the token at `~/.config/garmin/`.
 - Secrets live in `.env` (`GARMIN_API_KEY`, `GEMINI_API_KEY`, later maybe `ANTHROPIC_API_KEY`). Never print, log or commit them. All Garmin and AI calls happen in the backend, never in the browser.
 - Garmin API is read-only. Backfill must respect per-request limits: 28 days for steps/stress, 31 for daily summaries, sleep summaries and body battery, 365 for HRV, about 45 activities per page. Daily summaries over about 90 days fail with HTTP 500. Chunk at 28 days.
-- Health data stays local. Strip identifiers (name, profile ID, profile image URLs, activity names) before sending anything to an AI service, as `export.py` does. `raw_dumps/` and `data/` are gitignored.
+- Health data stays local. Strip identifiers (name, profile ID, profile image URLs, activity names) before sending anything to an AI service, as `export.py` does. `raw_dumps/` and `data/` are gitignored. GPS routes reveal where I run, so they stay out of `/api/activities` and the export. The one deliberate exception to local-only: opening a run's pop-up requests map tiles from OpenStreetMap, which sees the area viewed and my IP, not the route.
 - Keep changes small and simple. Update the checkboxes in `PLAN.md` as work completes.
 
 ## Data facts that matter
@@ -65,5 +65,6 @@ Only add fields; existing ones stay as they are. Anything Garmin didn't return i
 - Garmin's official client, not the third-party `gcpapi-sync` (which would add automatic range-splitting and retries but is a single-maintainer package).
 - v1 metrics: sleep, resting HR, HRV, steps, stress, body battery, training load, workouts.
 - Run splits come from the activity file via Garmin's `garmin-fit-sdk`, not `/details`, which is downsampled and has no laps.
+- Run routes are stored locally rather than fetched on click, and drawn on OpenStreetMap tiles (decided 2026-11-04).
 - Sync is manual (Sync button or CLI). No scheduled job: one was written and deliberately dropped, so don't re-add it unless asked.
 - Start with 28 days of data; insights explored first by attaching the export to a chat, then automated.

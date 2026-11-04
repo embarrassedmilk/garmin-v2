@@ -22,6 +22,8 @@ SCHEMA = (
     "te_aerobic REAL, te_anaerobic REAL, training_load REAL);"
     "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);"
     "CREATE TABLE IF NOT EXISTS body_battery (date TEXT PRIMARY KEY NOT NULL, curve TEXT);"  # JSON, kept out of daily to keep /api/daily small
+    # JSON [[lat, lon], ...], "[]" if the file has no GPS. Its own table so location can't leak through SELECT * on activities.
+    "CREATE TABLE IF NOT EXISTS run_routes (id INTEGER PRIMARY KEY, points TEXT);"
 )
 
 # Added after the first release, so existing databases need them too.

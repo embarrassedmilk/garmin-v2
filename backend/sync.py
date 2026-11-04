@@ -19,6 +19,8 @@ load_dotenv()
 CHUNK_DAYS = 28  # Garmin caps most range endpoints at 28-31 days per request
 BODY_BATTERY_CHUNKS = 96  # readings per day: one every 15 minutes
 DAY_MIN = 24 * 60
+ROUTE_MAX_POINTS = 500  # plenty for a map; a run file has one point per second or so
+SEMICIRCLE_DEG = 180 / 2**31  # activity files store positions in semicircles
 
 
 def chunks(start: date, end: date, n: int = CHUNK_DAYS):
@@ -159,7 +161,7 @@ def parse_activity(a: dict) -> dict:
 
 
 def read_fit(zip_bytes: bytes) -> dict:
-    """Decode an activity file in memory. It also holds GPS and profile data, so it is never saved."""
+    """Decode an activity file in memory. It also holds profile data, so the file itself is never saved."""
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
         fit = z.read(next(n for n in z.namelist() if n.lower().endswith(".fit")))
     messages, _ = Decoder(Stream.from_byte_array(bytearray(fit))).read(convert_datetimes_to_dates=False, merge_heart_rates=False)
@@ -192,6 +194,17 @@ def parse_run_details(messages: dict) -> dict:
         })
     zones = next((z for z in messages.get("time_in_zone_mesgs", []) if z.get("reference_mesg") == "session"), {})
     return {"laps": laps, "hr_zone_bounds_bpm": zones.get("hr_zone_high_boundary"), "vo2max": parse_vo2max(messages)}
+
+
+def parse_route(messages: dict) -> list:
+    """The GPS track as [lat, lon] pairs, thinned to at most ROUTE_MAX_POINTS. Local only: never exported."""
+    points = [[round(r["position_lat"] * SEMICIRCLE_DEG, 5), round(r["position_long"] * SEMICIRCLE_DEG, 5)]
+              for r in messages.get("record_mesgs", [])
+              if r.get("position_lat") is not None and r.get("position_long") is not None]
+    if len(points) <= ROUTE_MAX_POINTS:
+        return points
+    kept = points[:-1][::(len(points) - 1) // (ROUTE_MAX_POINTS - 1) + 1]
+    return kept + [points[-1]]  # always end where the run ended
 
 
 def _record(c, days: int, counts: dict, errors: list) -> dict:
@@ -258,16 +271,20 @@ def run_sync(days: int = 28) -> dict:
 
         pull("activities", activities, parse_activity, "activities", "id")
 
-        # One download per run, once: a run's laps don't change after upload.
+        # One download per run, once: a run's laps and route don't change after upload.
+        # Runs synced before routes were stored have details but no route, so they get one more download.
         run_types = list(db.RUN_SUBTYPES)
         pending = c.execute(
-            f"SELECT id, start_local FROM activities WHERE run_details IS NULL AND substr(start_local,1,10) >= ? "
+            f"SELECT id, start_local FROM activities "
+            f"WHERE (run_details IS NULL OR (run_details != '{{}}' AND id NOT IN (SELECT id FROM run_routes))) "
+            f"AND substr(start_local,1,10) >= ? "
             f"AND type IN ({', '.join('?' * len(run_types))})", [start.isoformat(), *run_types]).fetchall()
         counts["run_details"] = 0
         for run in pending:
             try:
-                details = parse_run_details(read_fit(client.download_activity(run["id"])))
-                db.upsert(c, "activities", "id", {"id": run["id"], "run_details": json.dumps(details)})
+                messages = read_fit(client.download_activity(run["id"]))
+                db.upsert(c, "activities", "id", {"id": run["id"], "run_details": json.dumps(parse_run_details(messages))})
+                db.upsert(c, "run_routes", "id", {"id": run["id"], "points": json.dumps(parse_route(messages))})
                 counts["run_details"] += 1
             except Exception as ex:
                 errors.append(f"run_details {run['start_local'][:10]}: {type(ex).__name__}: {str(ex)[:200]}")

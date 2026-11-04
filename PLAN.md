@@ -58,7 +58,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
 - [x] Export for Claude button (`GET /api/export`)
 - [x] Sleep pop-up: detailed sleep score breakdown when clicking the sleep score
-- [ ] Run pop-up: map of the route. GPS is currently never saved (`sync.py` discards it), so this needs a decision on storing it
+- [x] Run pop-up: map of the route. Thinned GPS track stored locally in `run_routes`, never exported; OpenStreetMap tiles
 - [ ] Stat row: show each value against my own baseline
 - [ ] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Start early: tags can't be collected reliably after the fact
 

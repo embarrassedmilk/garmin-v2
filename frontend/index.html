@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Garmin dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
     <style>
         :root {
             --bg: #f2f5f8;
@@ -419,6 +421,19 @@
             text-align: right
         }
 
+        .map {
+            height: 340px;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            z-index: 0
+        }
+
+        @media (prefers-color-scheme:dark) {
+            .map .leaflet-tile-pane {
+                filter: brightness(.8)
+            }
+        }
+
         .pair {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -468,7 +483,7 @@
         const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
         const barRow = (label, share, value) => `<div class="zone"><span>${label}</span><div><i style="width:${share}%"></i></div><em>${value} · ${num(share)}%</em></div>`;
         const STALE_MS = 36 * 3600 * 1000, MAX_WORKOUTS = 12;
-        let charts = [], popCharts = [], DAILY = [], ACTS = [], workoutTab = 'all';
+        let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], workoutTab = 'all';
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
         function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
@@ -630,7 +645,23 @@
   <section><h3>What went into the score</h3><p>${notes ? `Garmin's summary: ${notes}. ` : ''}Garmin rates each factor but doesn't say how many points each one adds or removes.</p>${table}</section>`);
         }
 
-        function openRun(a) {
+        function drawRoute(points) {
+            popMap?.remove();
+            popMap = L.map('run-map', { scrollWheelZoom: false });  // the wheel keeps scrolling the pop-up
+            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(popMap);
+            // Fixed colours, not theme ones: the tiles look the same in both themes. Violet isn't used by OSM's roads or water.
+            L.polyline(points, { color: '#fff', weight: 7, opacity: .9 }).addTo(popMap);
+            const route = L.polyline(points, { color: '#6a1be0', weight: 4 }).addTo(popMap);
+            const dot = (at, c, label) => L.circleMarker(at, { radius: 6, color: '#fff', weight: 2, fillColor: css(c), fillOpacity: 1 }).bindTooltip(label).addTo(popMap);
+            dot(points.at(-1), '--deep', 'Finish');
+            dot(points[0], '--steps', 'Start');
+            popMap.fitBounds(route.getBounds(), { padding: [16, 16] });
+        }
+
+        async function openRun(a) {
+            const { points } = await api(`/api/activities/${a.id}/route`);
+            const hasMap = points.length > 1 && window.L;  // no GPS (treadmill), not synced yet, or Leaflet didn't load
+            const map = hasMap ? '<section><h3>Route</h3><div id="run-map" class="map"></div></section>' : '';
             const r = a.run, km = a.distance_m / 1000;
             const tiles = [
                 ['Distance', a.distance_m && num(km, 2) + ' km'], ['Time', a.duration_s && hm(a.duration_s)],
@@ -641,7 +672,8 @@
                 ['Elevation', r.elevation_gain_m != null && `+${r.elevation_gain_m} / −${r.elevation_loss_m ?? '–'} m`],
                 ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
             ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
-            showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${zoneRows(r)}${splitRows(r)}`);
+            showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${map}${zoneRows(r)}${splitRows(r)}`);
+            if (hasMap) drawRoute(points);
             if (!$('#run-pace')) return;
             const opt = (extra = {}) => ({ maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: extra.tooltip }, scales: { x: { title: { display: true, text: 'km' } }, y: extra.y || {} } });
             const line = (id, key, c, extra) => popCharts.push(new Chart($('#' + id), { type: 'line', data: { labels: r.splits.map(s => s.km), datasets: [{ data: r.splits.map(s => s[key]), borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 3, tension: .25, spanGaps: true }] }, options: opt(extra) }));
@@ -649,7 +681,7 @@
             line('run-hr', 'avg_hr', '--heart', { tooltip: { callbacks: { label: c => c.parsed.y + ' bpm' } } });
         }
 
-        $('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = [] };
+        $('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = []; popMap?.remove(); popMap = null };
         $('#pop').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
         $('#app').onclick = e => {
             const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
@@ -658,7 +690,7 @@
                 $('#workouts').innerHTML = workoutsHtml();
                 [...document.querySelectorAll('[data-tab]')].find(b => b.dataset.tab === workoutTab).focus();
             }
-            if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run));
+            if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run)).catch(err => say(err.message));
             if (s) openStress(s.dataset.stress).catch(err => say(err.message));
             const sleep = e.target.closest('[data-sleep]');
             if (sleep) openSleep(sleep.dataset.sleep);
