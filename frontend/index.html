@@ -250,16 +250,25 @@
         .info {
             display: inline-grid;
             place-items: center;
-            width: 1.1em;
-            height: 1.1em;
-            margin-left: 4px;
-            border: 1px solid currentColor;
+            width: 15px;
+            height: 15px;
+            margin-left: 5px;
             border-radius: 50%;
-            font-size: .75em;
-            font-weight: 600;
+            background: var(--line);
             color: var(--mute);
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
             cursor: help;
-            vertical-align: 1px
+            vertical-align: 1px;
+            transition: background .15s, color .15s
+        }
+
+        .info:hover,
+        .info:focus-visible {
+            background: var(--mute);
+            color: var(--bg);
+            outline: none
         }
 
         #tip {
@@ -688,13 +697,13 @@
     <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
   </div>
   <section id="tags">${tagsHtml()}</section>
+  <section id="workouts">${workoutsHtml()}</section>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
   <section><h3>Resting heart rate and HRV</h3><p>Nightly HRV average and daily resting heart rate. Look for changes against your own normal, not single days.</p><div class="chart"><canvas id="c2"></canvas></div></section>
   <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
   <section><h3>Stress</h3><p>Average stress each day, on Garmin's 0–100 scale. The axis stops just above your highest value, not at 100.</p><div class="chart"><canvas id="c4"></canvas></div></section>
   <section><h3>Body battery</h3><p>How much body battery you gained and used each day.</p><div class="chart"><canvas id="c6"></canvas></div></section>
-  <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>
-  <section id="workouts">${workoutsHtml()}</section>`;
+  <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>`;
 
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
