@@ -560,6 +560,53 @@ class SleepDetailTest(TempDbCase):
         self.assertNotIn("sleep_details", json.dumps(build_export(28)))
 
 
+class TagTest(TempDbCase):
+    def put(self, day, tags):
+        return TestClient(app).put(f"/api/tags/{day}", json={"tags": tags})
+
+    def test_tags_are_cleaned_saved_and_replaced(self):
+        r = self.put(YESTERDAY, ["  Late   Meal ", "alcohol", "ALCOHOL", ""])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["days"], {YESTERDAY: ["alcohol", "late meal"]})
+        self.put(TODAY.isoformat(), ["alcohol"])
+        self.put(YESTERDAY, ["travel"])
+        state = TestClient(app).get("/api/tags").json()
+        self.assertEqual(state["days"], {YESTERDAY: ["travel"], TODAY.isoformat(): ["alcohol"]})
+        self.assertEqual(set(state["known"]), {"travel", "alcohol"})
+
+    def test_empty_list_clears_the_day(self):
+        self.put(YESTERDAY, ["alcohol"])
+        self.assertEqual(self.put(YESTERDAY, []).json()["days"], {})
+
+    def test_known_tags_are_most_used_first(self):
+        for d in range(1, 4):
+            self.put((TODAY - timedelta(days=d)).isoformat(), ["alcohol"] if d == 1 else ["travel"])
+        self.assertEqual(TestClient(app).get("/api/tags").json()["known"], ["travel", "alcohol"])
+
+    def test_bad_input_is_rejected(self):
+        tomorrow = (TODAY + timedelta(days=1)).isoformat()
+        self.assertEqual(self.put("not-a-date", ["x"]).status_code, 422)
+        self.assertEqual(self.put(tomorrow, ["x"]).status_code, 422)
+        self.assertEqual(self.put(YESTERDAY, ["x" * 41]).status_code, 422)
+        self.assertEqual(self.put(YESTERDAY, [f"t{n}" for n in range(21)]).status_code, 422)
+        self.assertEqual(TestClient(app).get("/api/tags").json()["days"], {})
+
+    def test_export_adds_tags_only_to_tagged_days(self):
+        self.seed()
+        self.put(YESTERDAY, ["alcohol"])
+        export = build_export(28)
+        by_date = {d["date"]: d for d in export["daily"]}
+        self.assertEqual(by_date[YESTERDAY]["tags"], ["alcohol"])
+        self.assertNotIn("tags", by_date[TODAY.isoformat()])
+        self.assertEqual(export["tags_logged_since"], YESTERDAY)
+
+    def test_export_without_tags_has_no_tag_fields(self):
+        self.seed()
+        export = build_export(28)
+        self.assertNotIn("tags_logged_since", export)
+        self.assertTrue(all("tags" not in d for d in export["daily"]))
+
+
 class MigrationTest(TempDbCase):
     def test_old_daily_table_gets_stress_columns_and_keeps_rows(self):
         db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)

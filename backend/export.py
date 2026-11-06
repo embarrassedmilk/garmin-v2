@@ -13,7 +13,13 @@ CAVEATS = [
     "ended that morning, and are included.",
     "HRV baseline/status may be unavailable while Garmin is still onboarding; only nightly averages are included.",
     "Some values (e.g. sleep_spo2) can be null.",
-    "No context data (food, alcohol, caffeine, illness, mood, work). Do not guess causes.",
+    "Apart from the optional daily tags, there is no context data (food, alcohol, caffeine, illness, mood, work). "
+    "Do not guess causes.",
+    "tags are short labels the user logged by hand on some days (e.g. alcohol, illness, travel), starting at "
+    "tags_logged_since. A day without tags means nothing was logged, not that nothing happened. A tag is dated by "
+    "the day it happened, while sleep, HRV and sleep_* fields are dated by wake-up day, so an evening tag's effect "
+    "on sleep shows up in the next day's row. Tagged days are few: treat any link to the metrics as a hint to "
+    "check, not a cause.",
     "Only a few weeks of data: flag low confidence, avoid trend claims on short samples, no medical advice.",
     "step_goal is Garmin's auto-adjusting goal, not one the user chose. Do not treat missed goals as meaningful.",
     "A null sleep_spo2 means Garmin returned no reading (Pulse Ox may be off on the watch), not a low value.",
@@ -159,6 +165,7 @@ def build_export(days: int = 28) -> dict:
     first = rows[0]["date"] if rows else "9999-12-31"
     acts = [dict(r) for r in c.execute(
         "SELECT * FROM activities WHERE substr(start_local,1,10) >= ? ORDER BY start_local", (first,)).fetchall()]
+    tags = db.all_tags(c)["days"]
     c.close()
 
     today = date.today().isoformat()
@@ -174,6 +181,7 @@ def build_export(days: int = 28) -> dict:
         "sleep_score": r["sleep_score"], "sleep_hours": _r(r["sleep_s"] and r["sleep_s"] / 3600, 2),
         "deep_min": _m(r["deep_s"]), "light_min": _m(r["light_s"]), "rem_min": _m(r["rem_s"]), "awake_min": _m(r["awake_s"]),
         "sleep_avg_hr": r["sleep_hr"], "sleep_stress": r["sleep_stress"], "sleep_spo2": r["sleep_spo2"],
+        **({"tags": tags[r["date"]]} if r["date"] in tags else {}),
     } for r in rows]
 
     workouts = [{
@@ -216,6 +224,7 @@ def build_export(days: int = 28) -> dict:
         "about": "Garmin watch export for AI analysis. Identifiers and activity names removed.",
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "range": {"from": daily[0]["date"] if daily else None, "to": daily[-1]["date"] if daily else None, "days": len(daily)},
+        **({"tags_logged_since": min(tags)} if tags else {}),
         "caveats": CAVEATS,
         "stats": stats,
         "daily": daily,

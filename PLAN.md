@@ -1,7 +1,7 @@
 # Garmin Dashboard: Plan
 
 Local web dashboard for my Garmin watch metrics, with AI insights (Gemini and/or Claude).
-Status as of 2026-11-03: dashboard v1 works locally, with data from 2026-10-15 onwards. Syncing is manual. Next: confirm history depth, then the daily tag log and baselines. Insights wait until there are 6 to 8 weeks of data.
+Status as of 2026-11-03: dashboard v1 works locally, with data from 2026-10-15 onwards. Syncing is manual. Next: confirm history depth, then baselines. Insights wait until there are 6 to 8 weeks of data.
 
 ## Stack (confirmed)
 - Backend: Python (managed with uv) + FastAPI
@@ -60,7 +60,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Sleep pop-up: detailed sleep score breakdown when clicking the sleep score
 - [x] Run pop-up: map of the route. Thinned GPS track stored locally in `run_routes`, never exported; OpenStreetMap tiles
 - [ ] Stat row: show each value against my own baseline
-- [ ] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Start early: tags can't be collected reliably after the fact
+- [x] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Garmin's app has its own Lifestyle Logging, but the Personal API doesn't expose it, so tags are entered on the dashboard
 
 ### 5. AI insights
 Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10). Until then, most output would be "too thin to say".
@@ -94,3 +94,4 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - 2026-11-03: dropped the scheduled sync in favour of syncing manually; kept the out-of-date banner (over 36 hours since the last successful sync).
 - 2026-11-03: added the daily tag log and baselines to the plan; insights wait for 6 to 8 weeks of data.
 - 2026-11-03: added detailed running fields to the export, using the activity file for laps (new dependency: `garmin-fit-sdk`). Sleep SpO2 is null since 2026-10-28 because Garmin returns none, not because of the parser. Added VO2 max from an undocumented activity file field, after matching it to the watch. Export went from 15,025 to 27,100 bytes on the 20-day range.
+- 2026-11-06: Garmin Connect's Lifestyle Logging can't be read through the Personal API (no client method; `/lifestylelogging-service/dailyLog/{date}` returns 404). Built the tag log on the dashboard instead: `tags` table, `GET /api/tags`, `PUT /api/tags/{day}`, `tags` on daily export entries.

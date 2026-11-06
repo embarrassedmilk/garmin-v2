@@ -1,4 +1,4 @@
-"""SQLite storage: one row per day, one row per activity."""
+"""SQLite storage: one row per day, one row per activity, plus the tags logged on the dashboard."""
 import os
 import sqlite3
 from pathlib import Path
@@ -24,6 +24,8 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS body_battery (date TEXT PRIMARY KEY NOT NULL, curve TEXT);"  # JSON, kept out of daily to keep /api/daily small
     # JSON [[lat, lon], ...], "[]" if the file has no GPS. Its own table so location can't leak through SELECT * on activities.
     "CREATE TABLE IF NOT EXISTS run_routes (id INTEGER PRIMARY KEY, points TEXT);"
+    # Logged by hand on the dashboard: Garmin's API doesn't expose the app's Lifestyle Logging.
+    "CREATE TABLE IF NOT EXISTS tags (date TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (date, tag));"
 )
 
 # Added after the first release, so existing databases need them too.
@@ -74,3 +76,11 @@ def set_meta(c: sqlite3.Connection, key: str, value: str) -> None:
 def get_meta(c: sqlite3.Connection, key: str):
     r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
     return r["value"] if r else None
+
+def all_tags(c: sqlite3.Connection) -> dict:
+    """{"days": {date: [tags]}, "known": every tag used, most used first}."""
+    days = {}
+    for r in c.execute("SELECT date, tag FROM tags ORDER BY date, tag"):
+        days.setdefault(r["date"], []).append(r["tag"])
+    known = [r["tag"] for r in c.execute("SELECT tag FROM tags GROUP BY tag ORDER BY COUNT(*) DESC, tag")]
+    return {"days": days, "known": known}

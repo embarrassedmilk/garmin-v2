@@ -82,7 +82,8 @@
         }
 
         button,
-        select {
+        select,
+        input {
             font: inherit;
             color: var(--ink);
             background: transparent;
@@ -97,7 +98,8 @@
         }
 
         button:focus-visible,
-        select:focus-visible {
+        select:focus-visible,
+        input:focus-visible {
             outline: 2px solid var(--light);
             outline-offset: 2px
         }
@@ -450,6 +452,72 @@
         .pair .chart {
             height: 160px
         }
+
+        .tagbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 10px
+        }
+
+        #tag-day {
+            cursor: pointer
+        }
+
+        .tagbar input:not([type]) {
+            cursor: text;
+            width: 14em
+        }
+
+        .tagbar .quick {
+            color: var(--mute);
+            padding: 3px 10px;
+            font-size: .88rem
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 4px 3px 10px;
+            border-radius: 14px;
+            background: var(--line);
+            font-size: .9rem
+        }
+
+        .chip button {
+            border: 0;
+            padding: 0 6px;
+            line-height: 1.2;
+            color: var(--mute)
+        }
+
+        .chip button:hover {
+            color: var(--ink)
+        }
+
+        .none {
+            color: var(--mute);
+            font-size: .9rem
+        }
+
+        section h4 {
+            margin: 14px 0 4px;
+            font-size: .9rem;
+            font-weight: 600
+        }
+
+        .tagged {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            font-size: .92rem
+        }
+
+        .tagged li {
+            padding: 2px 0
+        }
     </style>
 </head>
 
@@ -483,14 +551,16 @@
         const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
         const barRow = (label, share, value) => `<div class="zone"><span>${label}</span><div><i style="width:${share}%"></i></div><em>${value} · ${num(share)}%</em></div>`;
         const STALE_MS = 36 * 3600 * 1000, MAX_WORKOUTS = 12;
-        let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], workoutTab = 'all';
+        const PRESET_TAGS = ['alcohol', 'late meal', 'late caffeine', 'illness', 'travel'];
+        const todayIso = () => new Date().toLocaleDateString('en-CA');  // YYYY-MM-DD, local
+        let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], TAGS = { days: {}, known: [] }, workoutTab = 'all', tagDay = todayIso();
 
         async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
         function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
 
         async function load() {
             const days = +$('#range').value;
-            [DAILY, ACTS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities?limit=200')]);
+            [DAILY, ACTS, TAGS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities?limit=200'), api('/api/tags')]);
             const st = await api('/api/status');
             const okAt = st && st.last_ok_at && new Date(st.last_ok_at), okText = okAt && okAt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
             $('#synced').textContent = okAt ? 'Synced ' + okText : 'Not synced yet';
@@ -516,6 +586,27 @@
             return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
         }
 
+        function tagsHtml() {
+            return `<h3>Tags</h3><p>Things the watch can't see, logged on the day they happened. Sleep is dated by the morning you wake up, so last night's alcohol goes on yesterday. Tags go into the export: leave out names and places.</p>
+  <div class="tagbar"><input type="date" id="tag-day" value="${tagDay}" max="${todayIso()}" aria-label="Day to tag"></div><div id="tag-body">${tagBodyHtml()}</div>`;
+        }
+
+        function tagBodyHtml() {  // everything below the date input, so changing the date doesn't reset the input
+            const mine = TAGS.days[tagDay] || [];
+            const chips = mine.map(t => `<span class="chip">${esc(t)}<button data-untag="${esc(t)}" aria-label="Remove ${esc(t)}">×</button></span>`).join('') || '<span class="none">No tags for this day.</span>';
+            const quick = [...new Set([...TAGS.known, ...PRESET_TAGS])].filter(t => !mine.includes(t)).slice(0, 12).map(t => `<button class="quick" data-addtag="${esc(t)}">+ ${esc(t)}</button>`).join('');
+            const tagged = Object.keys(TAGS.days).filter(d => d >= DAILY[0].date).sort().reverse().map(d => `<li><button class="link" data-tagday="${d}">${day(d)}</button> ${TAGS.days[d].map(esc).join(', ')}</li>`).join('');
+            return `<div class="tagbar">${chips}</div>
+  <form id="tag-form" class="tagbar"><input id="tag-new" list="tag-known" maxlength="40" placeholder="New tag" aria-label="New tag"><button>Add</button><datalist id="tag-known">${TAGS.known.map(t => `<option value="${esc(t)}">`).join('')}</datalist>${quick}</form>
+  ${tagged ? `<h4>Tagged days since ${day(DAILY[0].date)}</h4><ul class="tagged">${tagged}</ul>` : ''}`;
+        }
+
+        async function saveTags(list, refocus) {
+            TAGS = await api('/api/tags/' + tagDay, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tags: list }) });
+            $('#tag-body').innerHTML = tagBodyHtml();
+            if (refocus) $(refocus)?.focus();
+        }
+
         function render() {
             charts.forEach(c => c.destroy()); charts = [];
             const app = $('#app');
@@ -536,6 +627,7 @@
     <div class="stat"${stressDay ? ` data-stress="${stressDay}"` : ''}>${stressDay ? '<button class="link"><small>Average stress</small></button>' : '<small>Average stress</small>'}<b>${num(t.stress_avg ?? last('stress_avg'))}</b><em>/ 100</em></div>
     <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
   </div>
+  <section id="tags">${tagsHtml()}</section>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
   <section><h3>Resting heart rate and HRV</h3><p>Nightly HRV average and daily resting heart rate. Look for changes against your own normal, not single days.</p><div class="chart"><canvas id="c2"></canvas></div></section>
   <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
@@ -694,6 +786,20 @@
             if (s) openStress(s.dataset.stress).catch(err => say(err.message));
             const sleep = e.target.closest('[data-sleep]');
             if (sleep) openSleep(sleep.dataset.sleep);
+            if (e.target.id === 'tag-day') try { e.target.showPicker() } catch { }  // open the calendar on any click, not just the icon
+            const mine = TAGS.days[tagDay] || [], add = e.target.closest('[data-addtag]'), drop = e.target.closest('[data-untag]'), td = e.target.closest('[data-tagday]');
+            if (add) saveTags([...mine, add.dataset.addtag], '#tag-new').catch(err => say(err.message));
+            if (drop) saveTags(mine.filter(t => t !== drop.dataset.untag), '#tag-new').catch(err => say(err.message));
+            if (td) { tagDay = $('#tag-day').value = td.dataset.tagday; $('#tag-body').innerHTML = tagBodyHtml(); $('#tag-day').focus() }
+        };
+        $('#app').onchange = e => {
+            if (e.target.id !== 'tag-day' || !e.target.value) return;
+            tagDay = e.target.value; $('#tag-body').innerHTML = tagBodyHtml();
+        };
+        $('#app').onsubmit = e => {
+            e.preventDefault();
+            const v = $('#tag-new').value.trim();
+            if (v) saveTags([...(TAGS.days[tagDay] || []), v], '#tag-new').catch(err => say(err.message));
         };
         $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
         $('#range').onchange = () => load().catch(e => say(e.message));
