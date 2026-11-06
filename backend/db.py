@@ -38,6 +38,8 @@ ADDED_ACTIVITY_COLS = {
     "elevation_gain_m": "REAL", "elevation_loss_m": "REAL", "avg_gap_mps": "REAL",
     "avg_cadence_spm": "REAL", "avg_stride_cm": "REAL",
     "hr_z1_s": "REAL", "hr_z2_s": "REAL", "hr_z3_s": "REAL", "hr_z4_s": "REAL", "hr_z5_s": "REAL",
+    "avg_vertical_osc_cm": "REAL",
+    "te_label": "TEXT",  # Garmin's primary benefit, e.g. TEMPO
     "run_details": "TEXT",  # JSON from the activity file: laps and HR zone boundaries. "{}" means no file.
 }
 

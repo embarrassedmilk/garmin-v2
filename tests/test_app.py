@@ -244,8 +244,10 @@ class RunExportTest(TempDbCase):
 
     def test_run_fields_are_converted(self):
         self.add(laps=[lap()] * 10, elevation_gain_m=29.0, elevation_loss_m=30.0, avg_gap_mps=2.696,
-                 avg_cadence_spm=171.17, avg_stride_cm=94.36, hr_z1_s=60, hr_z2_s=90, hr_z3_s=None)
+                 avg_cadence_spm=171.17, avg_stride_cm=94.36, hr_z1_s=60, hr_z2_s=90, hr_z3_s=None, te_label="LACTATE_THRESHOLD", avg_vertical_osc_cm=8.28)
         w = self.workout()
+        self.assertEqual(w["primary_benefit"], "lactate_threshold")
+        self.assertEqual(w["avg_vertical_oscillation_cm"], 8.3)
         self.assertEqual((w["elevation_gain_m"], w["elevation_loss_m"]), (29, 30))
         self.assertEqual(w["avg_gap_min_per_km"], 6.18)
         self.assertEqual((w["avg_cadence_spm"], w["avg_stride_length_m"]), (171, 0.94))
@@ -370,9 +372,10 @@ class RunDetailsSyncTest(TempDbCase):
     def test_summary_fields_are_parsed(self):
         row = sync.parse_activity(self.activity(1, "running", elevationGain=29.0, avgGradeAdjustedSpeed=2.7,
                                                 averageRunningCadenceInStepsPerMinute=171.2, avgStrideLength=94.4,
-                                                hrTimeInZone_3=60.0))
-        self.assertEqual((row["elevation_gain_m"], row["avg_gap_mps"], row["avg_cadence_spm"], row["avg_stride_cm"], row["hr_z3_s"]),
-                         (29.0, 2.7, 171.2, 94.4, 60.0))
+                                                hrTimeInZone_3=60.0, trainingEffectLabel="TEMPO",
+                                                avgVerticalOscillation=8.28))
+        self.assertEqual((row["elevation_gain_m"], row["avg_gap_mps"], row["avg_cadence_spm"], row["avg_stride_cm"], row["hr_z3_s"], row["te_label"],
+                          row["avg_vertical_osc_cm"]), (29.0, 2.7, 171.2, 94.4, 60.0, "TEMPO", 8.28))
 
     def test_only_runs_are_downloaded_and_only_once(self):
         client = MagicMock()

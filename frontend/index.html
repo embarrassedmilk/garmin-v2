@@ -247,6 +247,37 @@
             overflow-x: auto
         }
 
+        .info {
+            display: inline-grid;
+            place-items: center;
+            width: 1.1em;
+            height: 1.1em;
+            margin-left: 4px;
+            border: 1px solid currentColor;
+            border-radius: 50%;
+            font-size: .75em;
+            font-weight: 600;
+            color: var(--mute);
+            cursor: help;
+            vertical-align: 1px
+        }
+
+        #tip {
+            position: fixed;
+            z-index: 10;
+            max-width: min(340px, calc(100vw - 16px));
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: var(--ink);
+            color: var(--bg);
+            font-size: .82rem;
+            font-weight: 400;
+            line-height: 1.45;
+            text-align: left;
+            white-space: normal;
+            pointer-events: none
+        }
+
         #msg {
             color: var(--warn);
             font-size: .9rem;
@@ -572,6 +603,35 @@
         }
 
         const typeKey = a => a.type || 'other';
+        // Garmin's primary benefit keys, worded as on the watch where known; unknown keys fall back to title case.
+        const BENEFITS = { aerobic_base: 'Base', lactate_threshold: 'Threshold', vo2max: 'VO2 max', anaerobic_capacity: 'Anaerobic' };
+        const benefit = k => k ? BENEFITS[k] || typeLabel(k) : '';
+        const BENEFIT_HELP = "Garmin's label for the main training effect of a run, estimated from your heart rate and intensity against your own fitness. "
+            + 'Recovery: very easy, helps you recover. Base: easy aerobic running, builds endurance. Tempo: steady, moderately hard, raises the pace you can hold. '
+            + 'Threshold: hard sustained effort, raises your lactate threshold. VO2 max: hard intervals, raises your maximum aerobic capacity. '
+            + 'Anaerobic / Sprint (Speed): short, near all-out efforts, build speed and power.';
+        const info = text => `<span class="info" tabindex="0" role="img" data-tip="${esc(text)}" aria-label="${esc(text)}">?</span>`;
+        // One tooltip element, fixed so the table's scroll area can't clip it, moved into the dialog when the icon is in the pop-up
+        // (a modal dialog sits above everything else on the page).
+        const tip = Object.assign(document.createElement('div'), { id: 'tip', hidden: true });
+        tip.setAttribute('aria-hidden', 'true');
+        function showTip(icon) {
+            (icon.closest('dialog') || document.body).append(tip);
+            tip.textContent = icon.dataset.tip; tip.hidden = false; tip.anchor = icon;
+            const r = icon.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
+            tip.style.left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 8)) + 'px';
+            tip.style.top = (r.bottom + 6 + h > innerHeight ? r.top - 6 - h : r.bottom + 6) + 'px';
+        }
+        const hideTip = () => { tip.hidden = true; tip.anchor = null };
+        document.addEventListener('mouseover', e => { const i = e.target.closest?.('.info'); if (i) showTip(i); else if (tip.anchor) hideTip() });
+        document.addEventListener('focusin', e => { const i = e.target.closest?.('.info'); if (i) showTip(i) });
+        document.addEventListener('focusout', e => { if (e.target === tip.anchor) hideTip() });
+        document.addEventListener('click', e => {  // tap to show on touch screens, tap elsewhere to hide
+            const i = e.target.closest?.('.info');
+            if (i) { e.stopPropagation(); showTip(i) } else hideTip();
+        }, true);
+        addEventListener('scroll', hideTip, true);
+        const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
         const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
         function workoutsHtml() {
@@ -583,7 +643,7 @@
             const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', inRange.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
             const list = active === 'all' ? inRange : inRange.filter(a => typeKey(a) === active), shown = list.slice(0, MAX_WORKOUTS);
             const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}.</p>` : '';
-            return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="7">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
+            return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Benefit${info(BENEFIT_HELP)}</th><th>Vert. osc.${info(VO_HELP)}</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td>${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
         }
 
         function tagsHtml() {
@@ -761,7 +821,9 @@
                 ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm'],
                 [r.hr_drift_basis === 'gap' ? 'HR drift' : 'HR drift (not grade-adjusted)', r.hr_drift_pct != null && `${r.hr_drift_pct > 0 ? '+' : ''}${r.hr_drift_pct}%`],
                 ['Cadence', r.avg_cadence_spm && r.avg_cadence_spm + ' spm'], ['Stride', r.avg_stride_length_m && r.avg_stride_length_m + ' m'],
+                [`Vertical oscillation${info(VO_HELP)}`, r.avg_vertical_oscillation_cm != null && num(r.avg_vertical_oscillation_cm, 1) + ' cm'],
                 ['Elevation', r.elevation_gain_m != null && `+${r.elevation_gain_m} / −${r.elevation_loss_m ?? '–'} m`],
+                [`Primary benefit${info(BENEFIT_HELP)}`, r.primary_benefit && esc(benefit(r.primary_benefit))],
                 ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
             ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
             showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${map}${zoneRows(r)}${splitRows(r)}`);

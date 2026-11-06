@@ -150,11 +150,13 @@ def parse_activity(a: dict) -> dict:
         "te_aerobic": a.get("aerobicTrainingEffect"),
         "te_anaerobic": a.get("anaerobicTrainingEffect"),
         "training_load": a.get("activityTrainingLoad"),
+        "te_label": a.get("trainingEffectLabel"),
         "elevation_gain_m": a.get("elevationGain"),
         "elevation_loss_m": a.get("elevationLoss"),
         "avg_gap_mps": a.get("avgGradeAdjustedSpeed"),
         "avg_cadence_spm": a.get("averageRunningCadenceInStepsPerMinute"),
         "avg_stride_cm": a.get("avgStrideLength"),
+        "avg_vertical_osc_cm": a.get("avgVerticalOscillation"),
         **{f"hr_z{n}_s": a.get(f"hrTimeInZone_{n}") for n in range(1, 6)},
         "run_details": "{}" if a.get("manualActivity") else None,  # manual entries have no file to fetch
     }

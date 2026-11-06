@@ -132,11 +132,13 @@ def run_fields(a: dict) -> dict:
     stride = a["avg_stride_cm"]
     return _drop_none({
         "activity_subtype": db.RUN_SUBTYPES[a["type"]],
+        "primary_benefit": a["te_label"] and a["te_label"].lower(),
         "elevation_gain_m": _whole(a["elevation_gain_m"]),
         "elevation_loss_m": _whole(a["elevation_loss_m"]),
         "avg_gap_min_per_km": _pace(a["avg_gap_mps"]),
         "avg_cadence_spm": _whole(a["avg_cadence_spm"]),
         "avg_stride_length_m": None if stride is None else round(stride / 100, 2),
+        "avg_vertical_oscillation_cm": _r(a["avg_vertical_osc_cm"]),
         "hr_zone_minutes": None if all(z is None for z in zones) else
         {f"z{n}": round((z or 0) / 60, 1) for n, z in enumerate(zones, 1)},
         "hr_zone_bounds_bpm": details.get("hr_zone_bounds_bpm"),
