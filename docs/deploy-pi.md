@@ -1,12 +1,13 @@
 # Running the dashboard on the Raspberry Pi
 
 The Pi runs the dashboard all the time and syncs from Garmin on a timer. The phone reaches it
-through Tailscale, as before. Assumes a 64-bit OS, user `pi`, the repo at `~/garmin-dashboard`
-and the database on the HDD at `/mnt/mediavol1/garmin/`.
+through Tailscale, as before. Assumes a 64-bit OS and the repo at `~/garmin-dashboard`. Placeholders: `<pi>` is the Pi's SSH host,
+`<db-folder>` the folder that holds the database (e.g. on an external disk; it must already exist).
 
 ## One-time setup
 
-On the Mac, `~/.ssh/config` has a `rasp` host (192.168.178.20, user `pi`, key `~/.ssh/rasp_rsa`).
+On the Mac, give the Pi a `Host <pi>` entry in `~/.ssh/config` (`HostName`, `User`, `IdentityFile`,
+`IdentitiesOnly yes`), so git uses the right key.
 
 On the Pi:
 ```sh
@@ -19,10 +20,10 @@ timedatectl                      # the time zone must be mine: it decides which 
 
 On the Mac:
 ```sh
-git remote add pi rasp:garmin-dashboard
+git remote add pi <pi>:garmin-dashboard
 git push pi main
-scp .env rasp:garmin-dashboard/          # then add GARMIN_DB=/mnt/mediavol1/garmin/garmin.db to it
-scp data/garmin.db rasp:/mnt/mediavol1/garmin/   # tags exist only here, so copy, don't re-sync
+scp .env <pi>:garmin-dashboard/          # then add GARMIN_DB=<db-folder>/garmin.db to it
+scp data/garmin.db <pi>:<db-folder>/   # tags exist only here, so copy, don't re-sync
 ```
 
 On the Pi:
@@ -59,5 +60,4 @@ Sync errors show in the dashboard's banner, as with a manual sync.
 - `journalctl -u garmin-dashboard -f`, `journalctl -u garmin-sync`
 - Both units wait for the database's disk (`RequiresMountsFor`). If `GARMIN_DB`'s folder is
   missing, the app stops with "Is the disk mounted?" rather than starting an empty database.
-- Back up `/mnt/mediavol1/garmin/garmin.db` now and then, e.g.
-  `sqlite3 /mnt/mediavol1/garmin/garmin.db ".backup garmin-backup.db"`.
+- Back up the database now and then, e.g. `sqlite3 <db-folder>/garmin.db ".backup garmin-backup.db"`.
