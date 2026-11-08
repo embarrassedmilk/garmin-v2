@@ -737,7 +737,7 @@
                 z-index: 2;
                 align-items: center;
                 margin: 0 0 4px;
-                padding: calc(12px + env(safe-area-inset-top)) 0 10px;
+                padding: calc(32px + env(safe-area-inset-top)) 0 10px;  /* iOS blurs a band just below the status bar; keep the title out of it */
                 background: var(--bg);
                 border-bottom: 1px solid var(--line)
             }
