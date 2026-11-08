@@ -1,0 +1,13 @@
+# Default schedule. Change it with deploy/sync-timer.sh, which writes an override
+# that survives re-running install.sh.
+[Unit]
+Description=Daily Garmin sync
+
+[Timer]
+OnCalendar=*-*-* 09:00
+# Run at the next boot if the Pi was off at the scheduled time.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

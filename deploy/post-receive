@@ -1,0 +1,22 @@
+#!/bin/sh
+# Installed into .git/hooks/ on the Pi by deploy/install.sh. Runs after `git push pi main`,
+# once the files have been updated (receive.denyCurrentBranch=updateInstead).
+cd .. || exit 1
+unset GIT_DIR
+UV=$(command -v uv || echo "$HOME/.local/bin/uv")
+
+deploy_changed=no
+while read -r old new ref; do
+  if [ "$old" = 0000000000000000000000000000000000000000 ] || ! git diff --quiet "$old" "$new" -- deploy/; then
+    deploy_changed=yes
+  fi
+done
+
+if [ "$deploy_changed" = yes ]; then
+  echo "deploy/ changed: re-running install.sh"
+  sh deploy/install.sh
+else
+  "$UV" sync --frozen && sudo -n systemctl restart garmin-dashboard.service \
+    && echo "garmin-dashboard restarted" \
+    || echo "Restart failed: run 'sudo systemctl restart garmin-dashboard' on the Pi"
+fi

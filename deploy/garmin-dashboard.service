@@ -1,0 +1,17 @@
+# Template: deploy/install.sh fills in the @...@ values and copies it to /etc/systemd/system/.
+[Unit]
+Description=Garmin dashboard (uvicorn, reached through tailscale serve)
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=@DB_DIR@
+
+[Service]
+User=@USER@
+WorkingDirectory=@REPO@
+# 127.0.0.1 only: the dashboard has no login, so it must not be reachable from the home network.
+ExecStart=@UV@ run --frozen uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

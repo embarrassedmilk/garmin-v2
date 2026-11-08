@@ -1,0 +1,12 @@
+# Template: deploy/install.sh fills in the @...@ values. Started by garmin-sync.timer.
+[Unit]
+Description=Garmin sync (last 28 days into SQLite)
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=@DB_DIR@
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run --frozen python -m backend.sync

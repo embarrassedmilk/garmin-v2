@@ -7,6 +7,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Pull the last 28 days from Garmin into SQLite: `uv run python -m backend.sync [--days N]`
 - Run the dashboard: `uv run uvicorn backend.main:app --reload` then open http://127.0.0.1:8000
 - Run the tests (temporary database, no Garmin calls): `uv run python -m unittest`
+- On the Raspberry Pi (see `docs/deploy-pi.md`): deploy with `git push pi main`; `deploy/sync-timer.sh status|on|off|at <times>|default|now` controls the scheduled sync
 - Dump raw Garmin responses for exploration: `uv run python scripts/explore.py [--days N] [--only sleep hrv] [--path /x --param k=v]` (writes `raw_dumps/`, gitignored)
 
 ## Layout
@@ -16,6 +17,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - `backend/main.py`: FastAPI. `GET /api/daily`, `/api/activities` (runs also get `run`: the same fields as the export, from `run_fields()`), `/api/activities/{id}/route`, `/api/body-battery/{day}`, `/api/hrv/{day}`, `/api/tags`, `/api/status`, `/api/export`; `PUT /api/tags/{day}` (replaces the day's tags, lowercased, at most 20 tags of up to 40 characters, no future days); `POST /api/sync`; serves `frontend/`.
 - `frontend/index.html`: single file, Chart.js and Leaflet from a CDN, light/dark via CSS variables. Sleep hero, stat row, tag log, workouts table, then charts (sleep, resting HR and HRV, body battery, training load; no steps or stress charts). Workouts table has a tab per workout type (clicking a run opens a pop-up with summary stats, route map, time in each zone, and pace, heart rate and splits per km), stress pop-up from the Average stress tile (time in each band, body battery curve), sleep pop-up from the sleep score, with arrows to step through the nights in the selected range (rating per score factor, bed and wake times, HRV status and readings through the night), HRV chart (7-day average solid, single nights dotted) shaded with Garmin's balanced range, tag log (day picker, quick-add buttons, tagged days from the first day shown), range select (7/14/28 days), Sync and Export buttons, banner for sync errors and out-of-date data. Below 600 px wide: phone layout (fewer workout columns, full-screen pop-ups); on touch screens Export opens the share sheet. `manifest.json` and the icons make it a home-screen web app.
 - `tests/test_app.py`: smoke, sync and export tests.
+- `deploy/`: systemd units for the Pi (dashboard, sync service and timer, templates filled in by `install.sh`), `sync-timer.sh`, and the `post-receive` hook that deploys on push.
 - `scripts/explore.py`, `docs/data-notes.md` (still a stub), `PLAN.md`, `.env.example`.
 
 ## Rules
@@ -23,7 +25,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - Secrets live in `.env` (`GARMIN_API_KEY`, `GEMINI_API_KEY`, later maybe `ANTHROPIC_API_KEY`). Never print, log or commit them. All Garmin and AI calls happen in the backend, never in the browser.
 - Garmin API is read-only. Backfill must respect per-request limits: 28 days for steps/stress, 31 for daily summaries, sleep summaries and body battery, 365 for HRV, about 45 activities per page. Daily summaries over about 90 days fail with HTTP 500. Chunk at 28 days.
 - Health data stays local. Strip identifiers (name, profile ID, profile image URLs, activity names) before sending anything to an AI service, as `export.py` does. `raw_dumps/` and `data/` are gitignored. GPS routes reveal where I run, so they stay out of `/api/activities` and the export. The one deliberate exception to local-only: opening a run's pop-up requests map tiles from OpenStreetMap, which sees the area viewed and my IP, not the route.
-- Phone access is through Tailscale: `tailscale serve --bg 8000` on the Mac, reachable only from my tailnet. Never Tailscale Funnel: the dashboard has no login.
+- The dashboard runs on a Raspberry Pi at home (database on its HDD, `GARMIN_DB`), listening on 127.0.0.1 only. Phone access is through Tailscale: `tailscale serve --bg 8000` on the Pi, reachable only from my tailnet. Never Tailscale Funnel: the dashboard has no login.
 - Keep changes small and simple. Update the checkboxes in `PLAN.md` as work completes.
 
 ## Data facts that matter
@@ -68,5 +70,5 @@ Only add fields; existing ones stay as they are. Anything Garmin didn't return i
 - v1 metrics: sleep, resting HR, HRV, steps, stress, body battery, training load, workouts.
 - Run splits come from the activity file via Garmin's `garmin-fit-sdk`, not `/details`, which is downsampled and has no laps.
 - Run routes are stored locally rather than fetched on click, and drawn on OpenStreetMap tiles (decided 2026-11-04).
-- Sync is manual (Sync button or CLI). No scheduled job: one was written and deliberately dropped, so don't re-add it unless asked.
+- Sync runs daily on the Pi from a systemd timer (default 09:00, adjustable or off with `deploy/sync-timer.sh`), plus the Sync button or CLI. It was manual while the dashboard ran on the laptop; moved to the Pi with a timer on 2026-11-08.
 - Start with 28 days of data; insights explored first by attaching the export to a chat, then automated.

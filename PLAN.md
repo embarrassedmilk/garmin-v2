@@ -1,7 +1,7 @@
 # Garmin Dashboard: Plan
 
 Local web dashboard for my Garmin watch metrics, with AI insights (Gemini and/or Claude).
-Status as of 2026-11-03: dashboard v1 works locally, with data from 2026-10-15 onwards. Syncing is manual. Next: confirm history depth, then baselines. Insights wait until there are 6 to 8 weeks of data.
+Status as of 2026-11-03: dashboard v1 works locally, with data from 2026-10-15 onwards. Since 2026-11-08 it runs on the Raspberry Pi with a daily sync. Next: confirm history depth, then baselines. Insights wait until there are 6 to 8 weeks of data.
 
 ## Stack (confirmed)
 - Backend: Python (managed with uv) + FastAPI
@@ -45,7 +45,8 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 ### 3. Data layer
 - [x] `backend/db.py`: SQLite schema (daily, activities, meta)
 - [x] `backend/sync.py`: 28-day chunking, per-endpoint error isolation
-- [x] Manual sync: button, `POST /api/sync`, `python -m backend.sync` (no scheduled job, by choice)
+- [x] Manual sync: button, `POST /api/sync`, `python -m backend.sync`
+- [x] Daily sync on the Pi: systemd timer, `deploy/sync-timer.sh` to change or turn it off
 - [x] Stale-data banner and failed logins shown in the dashboard
 - [ ] Longer backfill once history depth is known
 
@@ -81,12 +82,12 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - [x] Phone layout (iPhone 13 Pro width) and home-screen web app: manifest, icon, safe areas, full-screen pop-ups, export via the share sheet
 - [ ] Loading states
 - [ ] README
+- [x] Hosted on the Raspberry Pi: systemd units, deploy by `git push pi main`, database on the HDD (`GARMIN_DB`), `docs/deploy-pi.md`
 
 ## Open decisions
 - Which Gemini / Claude model for insights, and what each costs (API credits are separate from a Claude subscription).
 - How much history to backfill.
 - Which insights are worth showing every week.
-- How to open the dashboard easily on my phone: a mobile app, free hosting (e.g. Vercel), or something else? Hosting would conflict with the current "health data stays local" rule, and the SQLite file and Garmin key would need a home.
 
 ## Notes / log
 - 2026-10-31: first explore run; all 15 endpoints worked. Chose Garmin's official client over third-party `gcpapi-sync`.
@@ -99,3 +100,4 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - 2026-11-03: added detailed running fields to the export, using the activity file for laps (new dependency: `garmin-fit-sdk`). Sleep SpO2 is null since 2026-10-28 because Garmin returns none, not because of the parser. Added VO2 max from an undocumented activity file field, after matching it to the watch. Export went from 15,025 to 27,100 bytes on the 20-day range.
 - 2026-11-06: Garmin Connect's Lifestyle Logging can't be read through the Personal API (no client method; `/lifestylelogging-service/dailyLog/{date}` returns 404). Built the tag log on the dashboard instead: `tags` table, `GET /api/tags`, `PUT /api/tags/{day}`, `tags` on daily export entries.
 - 2026-11-08: HRV history starts 2026-10-16, so there's nothing older to backfill. Now storing Garmin's HRV status, balanced range and highest 5 minutes per night, plus the 5-minute readings (`hrv_readings`, one `get_daily_hrv` call per night, once). Onboarding ended around 2026-11-03.
+- 2026-11-08: moved hosting to the Raspberry Pi (the laptop can't stay on). Database path set by `GARMIN_DB`, which now refuses a missing folder. Added back a scheduled sync now that something is always on: daily systemd timer, easy to change or turn off.
