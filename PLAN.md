@@ -40,7 +40,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] `scripts/explore.py` using the official client; raw dumps in `raw_dumps/`
 - [ ] Findings in `docs/data-notes.md` (still a stub)
 - [x] v1 metrics chosen
-- [ ] How far back does each endpoint's history go? A 28-day sync on 2026-11-01 returned nothing before 2026-10-15, so one older-window probe should settle it
+- [ ] How far back does each endpoint's history go? A 28-day sync on 2026-11-01 returned nothing before 2026-10-15, so one older-window probe should settle it. HRV is settled: a 365-day request on 2026-11-08 returned nothing before 2026-10-16
 
 ### 3. Data layer
 - [x] `backend/db.py`: SQLite schema (daily, activities, meta)
@@ -59,6 +59,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Export for Claude button (`GET /api/export`)
 - [x] Sleep pop-up: detailed sleep score breakdown when clicking the sleep score
 - [x] Run pop-up: map of the route. Thinned GPS track stored locally in `run_routes`, never exported; OpenStreetMap tiles
+- [x] HRV detail: Garmin's balanced range on the HRV chart, status and highest 5 minutes per night, 5-minute readings through the night in the sleep pop-up
 - [ ] Stat row: show each value against my own baseline
 - [x] Daily tag log (e.g. alcohol, illness, travel, late meal), included in the export. Garmin's app has its own Lifestyle Logging, but the Personal API doesn't expose it, so tags are entered on the dashboard
 
@@ -67,6 +68,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - [x] Manual route: export JSON attached to a Claude chat (works today)
 - [x] Export: detailed running fields (elevation, GAP, splits, HR zones, form, drift), `stats.runs`, `readiness` (VO2 max), new caveats
 - [x] Activity file message 140 field 9 is recovery minutes (matched the watch on 2026-11-08); exported as `recovery_hours_at_finish`
+- [x] Export: `hrv_status`, `hrv_5min_high_ms`, `hrv_baseline_low_ms`, `hrv_baseline_high_ms` on daily entries (5-minute readings not exported)
 - [ ] `backend/insights.py`: code computes stats, model writes narrative; provider switch `gemini` | `anthropic`, same prompt
 - [ ] Prompt rules: state confidence and sample size, flag thin data, no causal claims, no medical advice
 - [ ] Cache result; "regenerate" button; insights panel in the UI
@@ -96,3 +98,4 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - 2026-11-03: added the daily tag log and baselines to the plan; insights wait for 6 to 8 weeks of data.
 - 2026-11-03: added detailed running fields to the export, using the activity file for laps (new dependency: `garmin-fit-sdk`). Sleep SpO2 is null since 2026-10-28 because Garmin returns none, not because of the parser. Added VO2 max from an undocumented activity file field, after matching it to the watch. Export went from 15,025 to 27,100 bytes on the 20-day range.
 - 2026-11-06: Garmin Connect's Lifestyle Logging can't be read through the Personal API (no client method; `/lifestylelogging-service/dailyLog/{date}` returns 404). Built the tag log on the dashboard instead: `tags` table, `GET /api/tags`, `PUT /api/tags/{day}`, `tags` on daily export entries.
+- 2026-11-08: HRV history starts 2026-10-16, so there's nothing older to backfill. Now storing Garmin's HRV status, balanced range and highest 5 minutes per night, plus the 5-minute readings (`hrv_readings`, one `get_daily_hrv` call per night, once). Onboarding ended around 2026-11-03.

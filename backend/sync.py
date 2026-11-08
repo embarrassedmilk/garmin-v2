@@ -112,7 +112,25 @@ def parse_sleep(d: dict) -> dict:
 
 
 def parse_hrv(d: dict) -> dict:
-    return {"date": d["calendarDate"], "hrv_last_night": d.get("lastNightAvg"), "hrv_weekly": d.get("weeklyAvg")}
+    status = d.get("status")
+    return {
+        "date": d["calendarDate"], "hrv_last_night": d.get("lastNightAvg"), "hrv_weekly": d.get("weeklyAvg"),
+        "hrv_5min_high": d.get("lastNight5MinHigh"),
+        "hrv_status": status if status and status != "NONE" else None,  # NONE while onboarding
+        "hrv_baseline_low": g(d, "baseline", "balancedLow"), "hrv_baseline_high": g(d, "baseline", "balancedUpper"),
+    }
+
+
+def parse_hrv_readings(day: str, d: dict) -> list:
+    """The night's 5-minute readings as [minutes after local midnight of the wake-up day, ms]."""
+    midnight = datetime.fromisoformat(day)
+    out = []
+    for r in d.get("hrvReadings") or []:
+        if r.get("hrvValue") is None or not r.get("readingTimeLocal"):
+            continue
+        at = datetime.fromisoformat(r["readingTimeLocal"][:19])
+        out.append([round((at - midnight).total_seconds() / 60), r["hrvValue"]])
+    return sorted(out)
 
 
 def parse_body_battery(d: dict) -> dict:
@@ -270,6 +288,20 @@ def run_sync(days: int = 28) -> dict:
              parse_hrv, "daily", "date")
         pull("body_battery", lambda s, e: client.get_daily_body_battery(s, e, chunks=BODY_BATTERY_CHUNKS) or [],
              parse_body_battery, "body_battery", "date")
+
+        # One call per night, once: only nights that already have a summary, so the night is over.
+        nights = c.execute(
+            "SELECT date FROM daily WHERE hrv_last_night IS NOT NULL AND date >= ? "
+            "AND date NOT IN (SELECT date FROM hrv_readings) ORDER BY date DESC", [start.isoformat()]).fetchall()
+        counts["hrv_readings"] = 0
+        for night in nights:
+            try:
+                readings = parse_hrv_readings(night["date"], client.get_daily_hrv(date.fromisoformat(night["date"])) or {})
+                db.upsert(c, "hrv_readings", "date", {"date": night["date"], "readings": json.dumps(readings)})
+                counts["hrv_readings"] += 1
+            except Exception as ex:
+                errors.append(f"hrv_readings {night['date']}: {type(ex).__name__}: {str(ex)[:200]}")
+            c.commit()
 
         def activities(s, e):
             page, out = 0, []

@@ -12,6 +12,10 @@ CAVEATS = [
     "and workouts are incomplete and excluded from stats. Sleep and HRV on those rows cover the night that "
     "ended that morning, and are included.",
     "HRV baseline/status may be unavailable while Garmin is still onboarding; only nightly averages are included.",
+    "hrv_status is Garmin's HRV status for the night (e.g. balanced, unbalanced, low), judged against "
+    "hrv_baseline_low_ms to hrv_baseline_high_ms, Garmin's balanced range from the user's own recent weeks. "
+    "hrv_5min_high_ms is the highest 5-minute average of the night; a single high reading is noisy. "
+    "These fields are omitted while Garmin is onboarding the account.",
     "Some values (e.g. sleep_spo2) can be null.",
     "Apart from the optional daily tags, there is no context data (food, alcohol, caffeine, illness, mood, work). "
     "Do not guess causes.",
@@ -65,6 +69,11 @@ def _r(v, n=1):
 
 def _m(s):
     return None if s is None else round(s / 60)
+
+
+def _present(d: dict) -> dict:
+    """Drop what Garmin didn't return, so new fields are omitted rather than null."""
+    return {k: v for k, v in d.items() if v is not None}
 
 
 def _avg(vals):
@@ -181,6 +190,8 @@ def build_export(days: int = 28) -> dict:
         "calories_total": r["calories_total"], "calories_active": r["calories_active"],
         "resting_hr": r["rhr"], "hr_min": r["hr_min"], "hr_max": r["hr_max"],
         "hrv_last_night_ms": r["hrv_last_night"], "hrv_weekly_avg_ms": r["hrv_weekly"],
+        **_present({"hrv_5min_high_ms": r["hrv_5min_high"], "hrv_status": r["hrv_status"] and r["hrv_status"].lower(),
+                    "hrv_baseline_low_ms": r["hrv_baseline_low"], "hrv_baseline_high_ms": r["hrv_baseline_high"]}),
         "stress_avg": r["stress_avg"],
         "body_battery_min": r["bb_min"], "body_battery_max": r["bb_max"],
         "body_battery_charged": r["bb_charged"], "body_battery_drained": r["bb_drained"],

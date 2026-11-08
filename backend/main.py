@@ -52,6 +52,14 @@ def body_battery(day: str):
     return json.loads(row["curve"]) if row and row["curve"] else {"points": [], "events": []}
 
 
+@app.get("/api/hrv/{day}")
+def hrv_readings(day: str):
+    """One night's 5-minute HRV readings, dated by wake-up day. Empty until a sync has stored them."""
+    with db.connect() as c:
+        row = c.execute("SELECT readings FROM hrv_readings WHERE date=?", (day,)).fetchone()
+    return {"readings": json.loads(row["readings"]) if row else []}
+
+
 @app.get("/api/tags")
 def tags():
     with db.connect() as c:

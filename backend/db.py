@@ -25,6 +25,8 @@ SCHEMA = (
     # JSON [[lat, lon], ...], "[]" if the file has no GPS. Its own table so location can't leak through SELECT * on activities.
     "CREATE TABLE IF NOT EXISTS run_routes (id INTEGER PRIMARY KEY, points TEXT);"
     # Logged by hand on the dashboard: Garmin's API doesn't expose the app's Lifestyle Logging.
+    # JSON [[minutes after local midnight of the wake-up day (negative before midnight), ms], ...], "[]" if none.
+    "CREATE TABLE IF NOT EXISTS hrv_readings (date TEXT PRIMARY KEY NOT NULL, readings TEXT);"
     "CREATE TABLE IF NOT EXISTS tags (date TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (date, tag));"
 )
 
@@ -33,6 +35,8 @@ ADDED_DAILY_COLS = {
     "stress_max": "REAL", "stress_rest_s": "REAL", "stress_low_s": "REAL", "stress_med_s": "REAL",
     "stress_high_s": "REAL", "stress_activity_s": "REAL", "stress_uncat_s": "REAL",
     "sleep_details": "TEXT",  # JSON: score factors, bed and wake times, respiration
+    "hrv_5min_high": "REAL", "hrv_status": "TEXT",  # status is null while Garmin is onboarding
+    "hrv_baseline_low": "REAL", "hrv_baseline_high": "REAL",  # Garmin's "balanced" range for that night
 }
 ADDED_ACTIVITY_COLS = {
     "elevation_gain_m": "REAL", "elevation_loss_m": "REAL", "avg_gap_mps": "REAL",

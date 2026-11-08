@@ -581,6 +581,80 @@ class SleepDetailTest(TempDbCase):
         self.assertNotIn("sleep_details", json.dumps(build_export(28)))
 
 
+HRV_SUMMARY = {
+    "calendarDate": YESTERDAY, "weeklyAvg": 50, "lastNightAvg": 44, "lastNight5MinHigh": 88,
+    "baseline": {"lowUpper": 48, "balancedLow": 48, "balancedUpper": 52, "markerValue": 0.5},
+    "status": "UNBALANCED", "feedbackPhrase": "HRV_UNBALANCED_1",
+}
+HRV_NIGHT = {
+    "userProfilePk": 151415740,
+    "hrvReadings": [
+        {"hrvValue": 60, "readingTimeGMT": "x", "readingTimeLocal": f"{YESTERDAY}T00:05:00.0"},
+        {"hrvValue": 53, "readingTimeGMT": "x", "readingTimeLocal": f"{(TODAY - timedelta(days=2)).isoformat()}T23:30:00.0"},
+        {"hrvValue": None, "readingTimeGMT": "x", "readingTimeLocal": f"{YESTERDAY}T01:00:00.0"},
+    ],
+}
+
+
+class HrvTest(TempDbCase):
+    def sync(self, client):
+        client.__enter__.return_value = client
+        client.get_daily_summaries.return_value = {}
+        client.get_daily_sleep_summaries.return_value = []
+        client.get_daily_body_battery.return_value = []
+        client.search_activities.return_value = []
+        with patch.object(sync, "PersonalApiAuthenticator", MagicMock()), \
+                patch.object(sync, "GarminPersonalApiClient", return_value=client), \
+                patch.dict(os.environ, {"GARMIN_API_KEY": "not-a-real-key"}):
+            return sync.run_sync(days=2)
+
+    def test_summary_keeps_baseline_status_and_high(self):
+        row = sync.parse_hrv(HRV_SUMMARY)
+        self.assertEqual((row["hrv_5min_high"], row["hrv_status"], row["hrv_baseline_low"], row["hrv_baseline_high"]),
+                         (88, "UNBALANCED", 48, 52))
+
+    def test_onboarding_night_has_no_status_or_baseline(self):
+        row = sync.parse_hrv({**HRV_SUMMARY, "baseline": None, "status": "NONE"})
+        self.assertEqual((row["hrv_status"], row["hrv_baseline_low"]), (None, None))
+
+    def test_readings_are_minutes_from_wake_day_midnight(self):
+        self.assertEqual(sync.parse_hrv_readings(YESTERDAY, HRV_NIGHT), [[-30, 53], [5, 60]])
+
+    def test_sync_fetches_each_night_once_and_api_serves_it(self):
+        client = MagicMock()
+        client.get_daily_hrv_summaries.return_value = {"hrvSummaries": [HRV_SUMMARY]}
+        client.get_daily_hrv.return_value = HRV_NIGHT
+        result = self.sync(client)
+        self.assertEqual((result["errors"], result["counts"]["hrv_readings"]), ([], 1))
+        client.get_daily_hrv.assert_called_once_with(date.fromisoformat(YESTERDAY))
+        api = TestClient(app)
+        self.assertEqual(api.get(f"/api/hrv/{YESTERDAY}").json(), {"readings": [[-30, 53], [5, 60]]})
+        self.assertEqual(api.get("/api/hrv/2020-01-01").json(), {"readings": []})
+        self.assertNotIn("151415740", json.dumps(api.get(f"/api/hrv/{YESTERDAY}").json()))
+        self.assertEqual(self.sync(client)["counts"]["hrv_readings"], 0)  # stored nights aren't fetched again
+
+    def test_failing_night_is_recorded_and_retried(self):
+        client = MagicMock()
+        client.get_daily_hrv_summaries.return_value = {"hrvSummaries": [HRV_SUMMARY]}
+        client.get_daily_hrv.side_effect = RuntimeError("Garmin down")
+        self.assertIn("hrv_readings", self.sync(client)["errors"][0])
+        client.get_daily_hrv.side_effect, client.get_daily_hrv.return_value = None, HRV_NIGHT
+        self.assertEqual(self.sync(client)["counts"]["hrv_readings"], 1)
+
+    def test_export_adds_hrv_fields_and_omits_missing_ones(self):
+        c = db.connect()
+        db.upsert(c, "daily", "date", {"date": YESTERDAY, "summary_fetched_on": TODAY.isoformat(),
+                                       **{k: v for k, v in sync.parse_hrv(HRV_SUMMARY).items() if k != "date"}})
+        db.upsert(c, "daily", "date", {"date": TODAY.isoformat(), "hrv_last_night": 50})
+        c.commit()
+        c.close()
+        yesterday, today = build_export(28)["daily"]
+        self.assertEqual((yesterday["hrv_status"], yesterday["hrv_5min_high_ms"], yesterday["hrv_baseline_low_ms"],
+                          yesterday["hrv_baseline_high_ms"]), ("unbalanced", 88, 48, 52))
+        self.assertNotIn("hrv_status", today)
+        self.assertNotIn("hrv_baseline_low_ms", today)
+
+
 class TagTest(TempDbCase):
     def put(self, day, tags):
         return TestClient(app).put(f"/api/tags/{day}", json={"tags": tags})

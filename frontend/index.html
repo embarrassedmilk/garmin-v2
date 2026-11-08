@@ -397,6 +397,15 @@
             flex-wrap: nowrap
         }
 
+        .pop .step {
+            padding: 0 10px;
+            line-height: 1.6
+        }
+
+        .pop .step:disabled {
+            cursor: default
+        }
+
         .pop h2 {
             margin: 0;
             font-size: 1.2rem
@@ -886,7 +895,7 @@
     <div class="legend"><span><u style="background:var(--deep)"></u>Deep ${hm(sl.deep_s)}</span><span><u style="background:var(--light)"></u>Light ${hm(sl.light_s)}</span><span><u style="background:var(--rem)"></u>REM ${hm(sl.rem_s)}</span><span><u style="background:var(--awake)"></u>Awake ${hm(sl.awake_s)}</span></div></div>
   <div class="stats">
     <div class="stat"><small>Resting heart rate</small><b>${num(last('rhr'))}</b><em>bpm</em></div>
-    <div class="stat"><small>HRV last night</small><b>${num(last('hrv_last_night'))}</b><em>ms</em></div>
+    <div class="stat"><small>HRV last night</small><b>${num(last('hrv_last_night'))}</b><em>ms${last('hrv_status') ? ' · ' + sentence(last('hrv_status')) : ''}</em></div>
     <div class="stat"><small>Steps ${day(t.date)}</small><b>${num(t.steps).replace(/\B(?=(\d{3})+$)/g, ',')}</b><em>/ ${num(t.step_goal)}</em></div>
     <div class="stat"${stressDay ? ` data-stress="${stressDay}"` : ''}>${stressDay ? '<button class="link"><small>Average stress</small></button>' : '<small>Average stress</small>'}<b>${num(t.stress_avg ?? last('stress_avg'))}</b><em>/ 100</em></div>
     <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
@@ -894,7 +903,7 @@
   <section id="tags">${tagsHtml()}</section>
   <section id="workouts">${workoutsHtml()}</section>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
-  <section><h3>Resting heart rate and HRV</h3><p>Nightly HRV average and daily resting heart rate. Look for changes against your own normal, not single days.</p><div class="chart"><canvas id="c2"></canvas></div></section>
+  <section><h3>Resting heart rate and HRV</h3><p>Nightly HRV average and daily resting heart rate. The shaded band is Garmin's balanced HRV range, worked out from your own recent weeks; it's missing for nights before Garmin had enough data. Look for changes against your own normal, not single days.</p><div class="chart"><canvas id="c2"></canvas></div></section>
   <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
   <section><h3>Stress</h3><p>Average stress each day, on Garmin's 0–100 scale. The axis stops just above your highest value, not at 100.</p><div class="chart"><canvas id="c4"></canvas></div></section>
   <section><h3>Body battery</h3><p>How much body battery you gained and used each day.</p><div class="chart"><canvas id="c6"></canvas></div></section>
@@ -903,13 +912,15 @@
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
             Object.assign(Chart.defaults.scales.category.ticks, { maxRotation: 0, autoSkipPadding: 12 });  // skip date labels on narrow screens instead of slanting them
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
-            const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, sort: (a, b) => a.datasetIndex - b.datasetIndex } }, tooltip: { itemSort: (a, b) => a.datasetIndex - b.datasetIndex } } };
+            const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, sort: (a, b) => a.datasetIndex - b.datasetIndex, filter: (i, d) => { const ds = d.datasets[i.datasetIndex]; if (ds.legendText) i.text = ds.legendText; return !ds.noLegend } } }, tooltip: { itemSort: (a, b) => a.datasetIndex - b.datasetIndex } } };
             const mk = (id, type, datasets, scales) => charts.push(new Chart($('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
             const ln = (label, k, c, extra = {}) => ({ type: 'line', label, data: DAILY.map(r => r[k]), borderColor: css(c), backgroundColor: css(c), tension: .25, pointRadius: 2, spanGaps: true, order: -1, ...extra });  // order: drawn over the bars
             const bar = (label, data, c, extra = {}) => ({ type: 'bar', label, data, backgroundColor: css(c), ...extra });
             mk('c1', 'bar', [bar('Deep', h('deep_s'), '--deep', { stack: 's' }), bar('Light', h('light_s'), '--light', { stack: 's' }), bar('REM', h('rem_s'), '--rem', { stack: 's' }), bar('Awake', h('awake_s'), '--awake', { stack: 's' }), ln('Sleep score', 'sleep_score', '--ink', { yAxisID: 'y1' })],
                 { x: { stacked: true }, y: { stacked: true, title: { display: true, text: 'hours' } }, y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: 'score' } } });
-            mk('c2', 'line', [ln('Resting HR (bpm)', 'rhr', '--heart'), ln('HRV (ms)', 'hrv_last_night', '--hrv', { yAxisID: 'y1' })], { y: { title: { display: true, text: 'bpm' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'ms' } } });
+            const band = { yAxisID: 'y1', pointRadius: 0, borderWidth: 0, tension: 0, spanGaps: false, order: 1, backgroundColor: css('--hrv') + '2e' };
+            mk('c2', 'line', [ln('Resting HR (bpm)', 'rhr', '--heart'), ln('HRV (ms)', 'hrv_last_night', '--hrv', { yAxisID: 'y1' }),
+                ln('HRV balanced low (ms)', 'hrv_baseline_low', '--hrv', { ...band, fill: '+1', legendText: 'HRV balanced range' }), ln('HRV balanced high (ms)', 'hrv_baseline_high', '--hrv', { ...band, noLegend: true })], { y: { title: { display: true, text: 'bpm' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'ms' } } });
             mk('c3', 'bar', [bar('Steps', DAILY.map(r => r.steps), '--steps'), ln('Goal', 'step_goal', '--ink', { borderDash: [5, 4], pointRadius: 0 })], { y: { beginAtZero: true } });
             mk('c4', 'line', [ln('Average stress', 'stress_avg', '--heart')], { y: { beginAtZero: true, title: { display: true, text: 'stress' } } });
             mk('c6', 'bar', [bar('Battery gained', DAILY.map(r => r.bb_charged), '--steps'), bar('Battery used', DAILY.map(r => r.bb_drained), '--awake')], { y: { beginAtZero: true, title: { display: true, text: 'body battery' } } });
@@ -938,10 +949,11 @@
 
         function showPopup(title, sub, body) {
             const dlg = $('#pop');
+            popCharts.forEach(c => c.destroy()); popCharts = [];  // when switching nights without closing
             dlg.innerHTML = `<div class="pop">
   <header><div><h2 id="pop-title">${title}</h2><span class="bar">${sub}</span></div><button autofocus onclick="$('#pop').close()">Close</button></header>
   ${body}</div>`;
-            dlg.showModal();
+            if (!dlg.open) dlg.showModal();
         }
 
         const STRESS_BANDS = [['Rest', 'stress_rest_s'], ['Low', 'stress_low_s'], ['Medium', 'stress_med_s'], ['High', 'stress_high_s'], ['Activity', 'stress_activity_s'], ['Uncategorized', 'stress_uncat_s']];
@@ -981,8 +993,9 @@
         const SLEEP_FACTORS = [['totalDuration', 'Duration'], ['stress', 'Stress'], ['awakeCount', 'Times awake'], ['restlessness', 'Restlessness'], ['deepPercentage', 'Deep sleep'], ['lightPercentage', 'Light sleep'], ['remPercentage', 'REM sleep']];
         const sentence = s => s[0].toUpperCase() + s.slice(1).toLowerCase().replaceAll('_', ' ');
 
-        function openSleep(date) {
+        async function openSleep(date) {
             const r = DAILY.find(d => d.date === date), d = JSON.parse(r.sleep_details || '{}'), S = d.scores || {};
+            const { readings } = await api('/api/hrv/' + date);
             const stage = (k, secs) => S[k]?.value != null ? `${S[k].value}% · ${hm(secs)}` : hm(secs);
             const yours = { totalDuration: hm(r.sleep_s), stress: num(r.sleep_stress), awakeCount: num(d.awake_count), restlessness: '–', deepPercentage: stage('deepPercentage', r.deep_s), lightPercentage: stage('lightPercentage', r.light_s), remPercentage: stage('remPercentage', r.rem_s) };
             const optimal = (k, f) => {
@@ -998,8 +1011,29 @@
             const tiles = [['Score', score], ['Sleep start', d.start], ['Wake up', d.end], ['Time asleep', hm(r.sleep_s)], ['Average HR', r.sleep_hr != null && num(r.sleep_hr) + ' bpm'], ['Respiration', d.resp_avg != null && num(d.resp_avg) + ' brpm'], ['SpO2', r.sleep_spo2 != null && num(r.sleep_spo2) + '%']].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
             const notes = [d.feedback, d.insight].filter(n => n && n !== 'NONE').map(n => esc(sentence(n.replace(/^(POSITIVE|NEGATIVE|NEUTRAL)_/, '')))).join('. ');
             const table = rows ? `<div class="wrap"><table><thead><tr><th>Factor</th><th>You</th><th>Optimal</th><th>Rating</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p>No breakdown stored for this night yet. Select <b>Sync now</b> to load it.</p>';
-            showPopup('Sleep score', `Night ending ${day(date)}`, `<div class="tiles">${tiles}</div>
-  <section><h3>What went into the score</h3><p>${notes ? `Garmin's summary: ${notes}. ` : ''}Garmin rates each factor but doesn't say how many points each one adds or removes.</p>${table}</section>`);
+            const hrvTiles = [['HRV average', r.hrv_last_night != null && num(r.hrv_last_night) + ' ms'], ['Highest 5 min', r.hrv_5min_high != null && num(r.hrv_5min_high) + ' ms'], ['HRV status', r.hrv_status && sentence(r.hrv_status)], ['Balanced range', r.hrv_baseline_low != null && `${num(r.hrv_baseline_low)}–${num(r.hrv_baseline_high)} ms`]].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
+            const hrv = readings.length ? `<div class="tiles">${hrvTiles}</div><div class="chart"><canvas id="pop-hrv"></canvas></div>` : `${hrvTiles ? `<div class="tiles">${hrvTiles}</div>` : ''}<p>No readings stored for this night yet. Select <b>Sync now</b> to load them.</p>`;
+            const nights = DAILY.filter(n => n.sleep_s != null || n.sleep_score != null).map(n => n.date), i = nights.indexOf(date);
+            const step = (to, label, text) => `<button class="step" ${to ? `data-night="${to}"` : 'disabled'} aria-label="${label}">${text}</button>`;
+            const nav = `${step(nights[i - 1], 'Previous night', '‹')}Night ending ${day(date)}${step(nights[i + 1], 'Next night', '›')}`;
+            showPopup('Sleep score', nav, `<div class="tiles">${tiles}</div>
+  <section><h3>What went into the score</h3><p>${notes ? `Garmin's summary: ${notes}. ` : ''}Garmin rates each factor but doesn't say how many points each one adds or removes.</p>${table}</section>
+  <section><h3>HRV through the night</h3><p>One reading every 5 minutes while you slept. The dashed line is the night's average. Single readings swing a lot; the average is what Garmin compares with your balanced range.</p>${hrv}</section>`);
+            if (!$('#pop-hrv')) return;
+            const clock = m => hhmm((m % 1440 + 1440) % 1440);  // minutes before midnight are negative
+            const pts = readings.map(([x, y]) => ({ x, y }));
+            const avg = r.hrv_last_night != null ? [{ x: pts[0].x, y: r.hrv_last_night }, { x: pts.at(-1).x, y: r.hrv_last_night }] : [];
+            popCharts.push(new Chart($('#pop-hrv'), {
+                type: 'line',
+                data: { datasets: [
+                    { data: pts, borderColor: css('--hrv'), backgroundColor: css('--hrv'), borderWidth: 2, pointRadius: 0, pointHitRadius: 10, tension: .25 },
+                    { data: avg, borderColor: css('--mute'), borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, pointHitRadius: 0 }] },
+                options: {
+                    maintainAspectRatio: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
+                    plugins: { legend: { display: false }, tooltip: { filter: i => i.datasetIndex === 0, callbacks: { title: i => clock(i[0].parsed.x), label: c => 'HRV ' + c.parsed.y + ' ms' } } },
+                    scales: { x: { type: 'linear', bounds: 'data', ticks: { stepSize: 60, callback: clock } }, y: { title: { display: true, text: 'ms' } } }
+                }
+            }));
         }
 
         function drawRoute(points) {
@@ -1042,7 +1076,15 @@
         }
 
         $('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = []; popMap?.remove(); popMap = null };
-        $('#pop').onclick = e => { if (e.target === e.currentTarget) e.currentTarget.close() };
+        $('#pop').onclick = e => {
+            if (e.target === e.currentTarget) e.currentTarget.close();
+            const night = e.target.closest('[data-night]');
+            if (night) openSleep(night.dataset.night).then(() => ($(`#pop [aria-label="${night.getAttribute('aria-label')}"]:not(:disabled)`) || $('#pop [autofocus]')).focus()).catch(err => say(err.message));
+        };
+        $('#pop').onkeydown = e => {  // arrow keys step through nights in the sleep pop-up
+            const to = { ArrowLeft: 'Previous night', ArrowRight: 'Next night' }[e.key];
+            if (to && !e.target.matches('input, select')) $(`#pop [aria-label="${to}"]:not(:disabled)`)?.click();
+        };
         $('#app').onclick = e => {
             const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
             if (tab) {
@@ -1053,7 +1095,7 @@
             if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run)).catch(err => say(err.message));
             if (s) openStress(s.dataset.stress).catch(err => say(err.message));
             const sleep = e.target.closest('[data-sleep]');
-            if (sleep) openSleep(sleep.dataset.sleep);
+            if (sleep) openSleep(sleep.dataset.sleep).catch(err => say(err.message));
             if (e.target.id === 'tag-day') try { e.target.showPicker() } catch { }  // open the calendar on any click, not just the icon
             const mine = TAGS.days[tagDay] || [], add = e.target.closest('[data-addtag]'), drop = e.target.closest('[data-untag]'), td = e.target.closest('[data-tagday]');
             if (add) saveTags([...mine, add.dataset.addtag], '#tag-new').catch(err => say(err.message));
