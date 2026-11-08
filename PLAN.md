@@ -76,6 +76,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - [x] Smoke and export tests (`tests/test_app.py`, temporary database, no Garmin calls)
 - [ ] Tests with sanitized fixtures (parsers in `sync.py`, stats in `export.py`)
 - [x] Sync failures shown in the UI (expired key, Garmin down)
+- [x] Phone layout (iPhone 13 Pro width) and home-screen web app: manifest, icon, safe areas, full-screen pop-ups, export via the share sheet
 - [ ] Loading states
 - [ ] README
 

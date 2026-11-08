@@ -3,8 +3,16 @@
 
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Garmin dashboard</title>
+    <!-- Home-screen web app on the phone: full screen, content runs under the status bar (padded with the safe-area insets) -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Garmin">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#f2f5f8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0f1720" media="(prefers-color-scheme: dark)">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
@@ -45,17 +53,24 @@
             box-sizing: border-box
         }
 
+        html {
+            background: var(--bg);
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%
+        }
+
         body {
             margin: 0;
             background: var(--bg);
             color: var(--ink);
-            font: 16px/1.5 "Avenir Next", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif
+            font: 16px/1.5 "Avenir Next", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+            -webkit-tap-highlight-color: transparent
         }
 
         main {
             max-width: 1040px;
             margin: 0 auto;
-            padding: 28px 20px 64px
+            padding: calc(28px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) calc(64px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left))
         }
 
         header {
@@ -93,8 +108,10 @@
             cursor: pointer
         }
 
-        button:hover {
-            border-color: var(--mute)
+        @media (hover:hover) {
+            button:hover {
+                border-color: var(--mute)
+            }
         }
 
         button:focus-visible,
@@ -155,7 +172,7 @@
 
         .legend {
             display: flex;
-            gap: 16px;
+            gap: 4px 16px;
             flex-wrap: wrap;
             color: var(--mute);
             font-size: .85rem
@@ -338,13 +355,20 @@
             cursor: pointer
         }
 
-        tr[data-run]:hover {
+        @media (hover:hover) {
+            tr[data-run]:hover {
+                background: var(--line)
+            }
+        }
+
+        tr[data-run]:active {
             background: var(--line)
         }
 
         .link {
             border: 0;
             padding: 0;
+            text-align: left;
             text-decoration: underline;
             text-underline-offset: 3px
         }
@@ -558,6 +582,175 @@
         .tagged li {
             padding: 2px 0
         }
+
+        /* Touch screens: bigger targets for the small controls. */
+        @media (pointer:coarse) {
+            .info {
+                position: relative
+            }
+
+            .info::after {
+                content: "";
+                position: absolute;
+                inset: -12px
+            }
+
+            .chip button {
+                padding: 4px 10px;
+                font-size: 1.05rem
+            }
+
+            .tagbar .quick {
+                padding: 6px 12px
+            }
+        }
+
+        /* Phone width (iPhone 13 Pro is 390 px). */
+        @media (max-width:600px) {
+            main {
+                padding-top: calc(16px + env(safe-area-inset-top));
+                padding-left: max(16px, env(safe-area-inset-left));
+                padding-right: max(16px, env(safe-area-inset-right))
+            }
+
+            header {
+                margin-bottom: 20px
+            }
+
+            .bar {
+                flex-wrap: wrap;
+                width: 100%
+            }
+
+            #synced {
+                flex-basis: 100%;
+                font-size: .82rem
+            }
+
+            .bar select,
+            .bar button {
+                flex: 1;
+                padding: 8px 10px
+            }
+
+            .long,
+            .opt {
+                display: none
+            }
+
+            .big b {
+                font-size: 2.8rem
+            }
+
+            .stats {
+                grid-template-columns: 1fr 1fr
+            }
+
+            .stat,
+            .stat+.stat {
+                padding: 14px 12px 14px 0;
+                border-left: 0
+            }
+
+            .stat:nth-child(even) {
+                padding-left: 14px;
+                border-left: 1px solid var(--line)
+            }
+
+            .stat:nth-child(n+3) {
+                border-top: 1px solid var(--line)
+            }
+
+            .stat:last-child:nth-child(odd) {
+                grid-column: 1 / -1
+            }
+
+            .stat b {
+                font-size: 1.45rem
+            }
+
+            section {
+                padding: 22px 0
+            }
+
+            .chart {
+                height: 200px
+            }
+
+            .tabs {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                scrollbar-width: none
+            }
+
+            .tabs button {
+                flex: none
+            }
+
+            th,
+            td {
+                padding: 9px 8px 9px 0
+            }
+
+            #workouts td:nth-child(2) {
+                white-space: normal
+            }
+
+            .tagbar input:not([type]) {
+                flex: 1 0 60%;  /* own row with the Add button; quick-add buttons wrap below */
+                min-width: 0;
+                width: auto
+            }
+
+            #tag-day {
+                min-height: 40px
+            }
+
+            /* Pop-ups fill the screen, with the title and Close button kept at the top while scrolling. */
+            dialog {
+                width: 100%;
+                max-width: 100%;
+                height: 100%;
+                max-height: 100%;
+                margin: 0;
+                border: 0;
+                border-radius: 0
+            }
+
+            .pop {
+                padding: 0 max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))
+            }
+
+            .pop header {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                align-items: center;
+                margin: 0 0 4px;
+                padding: calc(12px + env(safe-area-inset-top)) 0 10px;
+                background: var(--bg);
+                border-bottom: 1px solid var(--line)
+            }
+
+            .pop header .bar {
+                width: auto
+            }
+
+            .tiles {
+                grid-template-columns: 1fr 1fr;
+                gap: 12px
+            }
+
+            .zone {
+                grid-template-columns: 100px 1fr 104px;
+                gap: 8px;
+                font-size: .85rem
+            }
+
+            .map {
+                height: 260px
+            }
+        }
     </style>
 </head>
 
@@ -572,8 +765,8 @@
                     <option value="14">Last 14 days</option>
                     <option value="28" selected>Last 28 days</option>
                 </select>
-                <button id="export" title="Download a compact JSON summary to attach to an AI chat">Export for
-                    Claude</button>
+                <button id="export" title="Download a compact JSON summary to attach to an AI chat">Export<span class="long"> for
+                    Claude</span></button>
                 <button id="sync">Sync now</button>
             </div>
         </header>
@@ -652,7 +845,7 @@
             const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', inRange.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
             const list = active === 'all' ? inRange : inRange.filter(a => typeKey(a) === active), shown = list.slice(0, MAX_WORKOUTS);
             const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}.</p>` : '';
-            return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th>Benefit${info(BENEFIT_HELP)}</th><th>Vert. osc.${info(VO_HELP)}</th><th>Aerobic / anaerobic</th><th>Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td>${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td>${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td>${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td>${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
+            return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th class="opt">Benefit${info(BENEFIT_HELP)}</th><th class="opt">Vert. osc.${info(VO_HELP)}</th><th class="opt">Aerobic / anaerobic</th><th class="opt">Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td class="opt">${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td class="opt">${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td class="opt">${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td class="opt">${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
         }
 
         function tagsHtml() {
@@ -706,6 +899,7 @@
   <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>`;
 
             Chart.defaults.color = css('--mute'); Chart.defaults.borderColor = css('--line'); Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+            Object.assign(Chart.defaults.scales.category.ticks, { maxRotation: 0, autoSkipPadding: 12 });  // skip date labels on narrow screens instead of slanting them
             const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
             const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, sort: (a, b) => a.datasetIndex - b.datasetIndex } }, tooltip: { itemSort: (a, b) => a.datasetIndex - b.datasetIndex } } };
             const mk = (id, type, datasets, scales) => charts.push(new Chart($('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
@@ -872,7 +1066,20 @@
             const v = $('#tag-new').value.trim();
             if (v) saveTags([...(TAGS.days[tagDay] || []), v], '#tag-new').catch(err => say(err.message));
         };
-        $('#export').onclick = () => { location.href = '/api/export?days=' + $('#range').value };
+        $('#export').onclick = async () => {
+            const url = '/api/export?days=' + $('#range').value;
+            // On the phone, open the share sheet (e.g. straight into the Claude app); a home-screen web app can't show a plain download.
+            if (!matchMedia('(pointer:coarse)').matches || !navigator.canShare) { location.href = url; return }
+            try {
+                const r = await fetch(url); if (!r.ok) throw new Error(r.statusText);
+                const name = (r.headers.get('Content-Disposition') || '').match(/filename="(.+)"/)?.[1] || 'garmin-export.json';
+                const file = new File([await r.blob()], name, { type: 'application/json' });
+                if (navigator.canShare({ files: [file] })) await navigator.share({ files: [file] }); else location.href = url;
+            } catch (err) {
+                if (err.name === 'NotAllowedError') location.href = url;  // the tap expired while the export loaded
+                else if (err.name !== 'AbortError') say('Export failed: ' + err.message);
+            }
+        };
         $('#range').onchange = () => load().catch(e => say(e.message));
         $('#sync').onclick = async e => {
             const b = e.target; b.disabled = true; b.textContent = 'Syncing…'; say('');
