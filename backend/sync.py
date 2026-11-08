@@ -21,6 +21,7 @@ BODY_BATTERY_CHUNKS = 96  # readings per day: one every 15 minutes
 DAY_MIN = 24 * 60
 ROUTE_MAX_POINTS = 500  # plenty for a map; a run file has one point per second or so
 SEMICIRCLE_DEG = 180 / 2**31  # activity files store positions in semicircles
+RECOVERY_MAX_MIN = 96 * 60  # Garmin caps recovery time at 4 days
 
 
 def chunks(start: date, end: date, n: int = CHUNK_DAYS):
@@ -177,8 +178,15 @@ def parse_vo2max(messages: dict):
     return value if value and 10 <= value <= 100 else None  # undocumented, so reject anything implausible
 
 
+def parse_recovery_min(messages: dict):
+    """Recovery time at the end of the run, in minutes: undocumented message 140, field 9.
+    Matched the watch once (2448 = 40.8h vs about 40h on 2026-11-08)."""
+    raw = next(iter(messages.get("140", [])), {}).get(9)
+    return raw if isinstance(raw, int) and 0 <= raw <= RECOVERY_MAX_MIN else None
+
+
 def parse_run_details(messages: dict) -> dict:
-    """Keep only laps, HR zone boundaries and VO2 max from a decoded activity file."""
+    """Keep only laps, HR zone boundaries, VO2 max and recovery time from a decoded activity file."""
     laps = []
     for lap in messages.get("lap_mesgs", []):
         cadence = lap.get("avg_running_cadence")
@@ -195,7 +203,8 @@ def parse_run_details(messages: dict) -> dict:
             "trigger": lap.get("lap_trigger"),
         })
     zones = next((z for z in messages.get("time_in_zone_mesgs", []) if z.get("reference_mesg") == "session"), {})
-    return {"laps": laps, "hr_zone_bounds_bpm": zones.get("hr_zone_high_boundary"), "vo2max": parse_vo2max(messages)}
+    return {"laps": laps, "hr_zone_bounds_bpm": zones.get("hr_zone_high_boundary"), "vo2max": parse_vo2max(messages),
+            "recovery_min": parse_recovery_min(messages)}
 
 
 def parse_route(messages: dict) -> list:
@@ -274,11 +283,12 @@ def run_sync(days: int = 28) -> dict:
         pull("activities", activities, parse_activity, "activities", "id")
 
         # One download per run, once: a run's laps and route don't change after upload.
-        # Runs synced before routes were stored have details but no route, so they get one more download.
+        # Runs synced before routes or recovery time were stored get one more download.
         run_types = list(db.RUN_SUBTYPES)
         pending = c.execute(
             f"SELECT id, start_local FROM activities "
-            f"WHERE (run_details IS NULL OR (run_details != '{{}}' AND id NOT IN (SELECT id FROM run_routes))) "
+            f"WHERE (run_details IS NULL OR (run_details != '{{}}' AND (id NOT IN (SELECT id FROM run_routes) "
+            f"OR json_type(run_details, '$.recovery_min') IS NULL))) "
             f"AND substr(start_local,1,10) >= ? "
             f"AND type IN ({', '.join('?' * len(run_types))})", [start.isoformat(), *run_types]).fetchall()
         counts["run_details"] = 0

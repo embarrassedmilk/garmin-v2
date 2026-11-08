@@ -365,6 +365,11 @@ class RunDetailsSyncTest(TempDbCase):
     def test_vo2max_comes_from_message_140(self):
         self.assertAlmostEqual(sync.parse_vo2max(FIT_MESSAGES), 51.55, places=2)
 
+    def test_recovery_comes_from_message_140(self):
+        self.assertEqual(sync.parse_run_details(FIT_MESSAGES)["recovery_min"], 2304)
+        for messages in ({}, {"140": [{7: 1}]}, {"140": [{9: -1}]}, {"140": [{9: 65535}]}):
+            self.assertIsNone(sync.parse_recovery_min(messages))
+
     def test_missing_or_implausible_vo2max_is_dropped(self):
         for messages in ({}, {"140": []}, {"140": [{9: 1}]}, {"140": [{7: 0}]}, {"140": [{7: 4294967295}]}):
             self.assertIsNone(sync.parse_vo2max(messages))
@@ -422,6 +427,19 @@ class RunDetailsSyncTest(TempDbCase):
         self.assertEqual(self.sync_once(client)["counts"]["run_details"], 1)
         client.download_activity.assert_called_once_with(1)
         self.assertEqual(self.sync_once(client)["counts"]["run_details"], 0)  # no GPS still counts as done
+
+    def test_run_synced_before_recovery_gets_one_more_download(self):
+        client = MagicMock()
+        client.search_activities.return_value = [self.activity(1, "running")]
+        with patch.object(sync, "read_fit", return_value={"140": [{}]}):
+            self.sync_once(client)  # stores recovery_min as null: done, not retried
+        c = db.connect()
+        c.execute("UPDATE activities SET run_details = ? WHERE id = 1", (json.dumps({"laps": []}),))
+        c.commit()
+        c.close()
+        self.assertEqual(self.sync_once(client)["counts"]["run_details"], 1)
+        self.assertEqual(self.sync_once(client)["counts"]["run_details"], 0)
+        self.assertEqual(client.download_activity.call_count, 2)
 
     def test_failed_download_is_recorded_and_retried(self):
         client = MagicMock()

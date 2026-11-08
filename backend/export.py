@@ -24,7 +24,10 @@ CAVEATS = [
     "step_goal is Garmin's auto-adjusting goal, not one the user chose. Do not treat missed goals as meaningful.",
     "A null sleep_spo2 means Garmin returned no reading (Pulse Ox may be off on the watch), not a low value.",
     "Not available from Garmin's Personal API, so absent here: training status, training readiness, "
-    "recovery time, acute and chronic load, run temperature. Do not estimate them.",
+    "acute and chronic load, run temperature. Do not estimate them.",
+    "recovery_hours_at_finish on runs is Garmin's recovery time when the run ended, read from an undocumented field "
+    "of the activity file and checked against the watch once. It includes recovery left over from earlier "
+    "activities and counts down afterwards, so it is not a measure of that run alone and not current readiness.",
     "readiness.vo2max_estimate is Garmin's estimate, read from an undocumented field of each run's activity file. "
     "The user checked it against the watch. It only updates on days with a run. It is not a lab value, and "
     "changes of a few tenths are not meaningful.",
@@ -142,6 +145,7 @@ def run_fields(a: dict) -> dict:
         "hr_zone_minutes": None if all(z is None for z in zones) else
         {f"z{n}": round((z or 0) / 60, 1) for n, z in enumerate(zones, 1)},
         "hr_zone_bounds_bpm": details.get("hr_zone_bounds_bpm"),
+        "recovery_hours_at_finish": _r(details.get("recovery_min") and details["recovery_min"] / 60, 1),
         "hr_drift_pct": drift,
         "hr_drift_basis": basis,
         "split_type": _split_type(laps) if laps else None,

@@ -23,8 +23,8 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - Key is exchanged for an access token valid 24h (the official client caches it). No refresh tokens.
 - Read-only. Base URL: https://personal.connectapi.garmin.com
 - Per-request limits: 28 days (steps, stress), 31 days (daily summaries, sleep summaries, body battery), 365 days (HRV), ~45 activities per page. Daily summaries over ~90 days fail with HTTP 500. Chunk at 28 days.
-- VO2 max is only in activity files (undocumented field, matches the watch).
-- Not available: training readiness, training status, recovery time, acute and chronic load, run temperature.
+- VO2 max and recovery time are only in activity files (undocumented fields, both checked against the watch).
+- Not available: training readiness, training status, acute and chronic load, run temperature.
 - Details and quirks: `docs/data-notes.md`
 - Docs: https://developer.garmin.com/gc-developer-program/personal/personal-api
 - Swagger (needs a browser, JavaScript): https://developer.garmin.com/gc-developer-program/personal/swagger-docs/
@@ -66,7 +66,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10). Until then, most output would be "too thin to say".
 - [x] Manual route: export JSON attached to a Claude chat (works today)
 - [x] Export: detailed running fields (elevation, GAP, splits, HR zones, form, drift), `stats.runs`, `readiness` (VO2 max), new caveats
-- [ ] Check whether activity file message 140 field 9 is recovery minutes, against the watch
+- [x] Activity file message 140 field 9 is recovery minutes (matched the watch on 2026-11-08); exported as `recovery_hours_at_finish`
 - [ ] `backend/insights.py`: code computes stats, model writes narrative; provider switch `gemini` | `anthropic`, same prompt
 - [ ] Prompt rules: state confidence and sample size, flag thin data, no causal claims, no medical advice
 - [ ] Cache result; "regenerate" button; insights panel in the UI

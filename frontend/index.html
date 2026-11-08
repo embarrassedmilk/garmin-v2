@@ -833,6 +833,7 @@
             if (i) { e.stopPropagation(); showTip(i) } else hideTip();
         }, true);
         addEventListener('scroll', hideTip, true);
+        const RECOVERY_HELP = "Garmin's recovery time when the run ended, from an undocumented field of the activity file. It includes recovery left from earlier activities and counts down afterwards.";
         const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
         const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
@@ -1028,6 +1029,7 @@
                 ['Elevation', r.elevation_gain_m != null && `+${r.elevation_gain_m} / −${r.elevation_loss_m ?? '–'} m`],
                 [`Primary benefit${info(BENEFIT_HELP)}`, r.primary_benefit && esc(benefit(r.primary_benefit))],
                 ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
+                [`Recovery at finish${info(RECOVERY_HELP)}`, r.recovery_hours_at_finish != null && num(r.recovery_hours_at_finish) + ' h'],
             ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
             showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${map}${zoneRows(r)}${splitRows(r)}`);
             if (hasMap) drawRoute(points);
