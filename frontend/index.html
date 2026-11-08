@@ -618,7 +618,7 @@
         /* Phone width (iPhone 13 Pro is 390 px). */
         @media (max-width:600px) {
             main {
-                padding-top: calc(16px + env(safe-area-inset-top));
+                padding-top: calc(32px + env(safe-area-inset-top));  /* iOS blurs a band just below the status bar; keep the title out of it */
                 padding-left: max(16px, env(safe-area-inset-left));
                 padding-right: max(16px, env(safe-area-inset-right))
             }
@@ -1028,7 +1028,7 @@
                 options: {
                     maintainAspectRatio: false, interaction: { mode: 'nearest', axis: 'x', intersect: false },
                     plugins: { legend: { display: false }, tooltip: { filter: i => i.datasetIndex === 0, callbacks: { title: i => clock(i[0].parsed.x), label: c => 'HRV ' + c.parsed.y + ' ms' } } },
-                    scales: { x: { type: 'linear', bounds: 'data', ticks: { stepSize: 60, callback: clock } }, y: { title: { display: true, text: 'ms' } } }
+                    scales: { x: { type: 'linear', min: Math.floor(pts[0].x / 60) * 60, max: Math.ceil(pts.at(-1).x / 60) * 60, ticks: { stepSize: 60, callback: clock } },  // whole hours, so the last tick doesn't land next to an hour mark y: { title: { display: true, text: 'ms' } } }
                 }
             }));
         }
