@@ -904,8 +904,6 @@
   <section id="workouts">${workoutsHtml()}</section>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
   <section><h3>Resting heart rate and HRV</h3><p>Resting heart rate (left axis) and HRV (right axis). The shaded band is Garmin's balanced HRV range, worked out from your own recent weeks; it's missing for nights before Garmin had enough data. Garmin's HRV status compares the solid 7-day average with the band, not single nights (dotted), so one low night can sit below the band while the status stays balanced.</p><div class="chart"><canvas id="c2"></canvas></div></section>
-  <section><h3>Steps</h3><p>Daily steps against your Garmin goal.</p><div class="chart"><canvas id="c3"></canvas></div></section>
-  <section><h3>Stress</h3><p>Average stress each day, on Garmin's 0–100 scale. The axis stops just above your highest value, not at 100.</p><div class="chart"><canvas id="c4"></canvas></div></section>
   <section><h3>Body battery</h3><p>How much body battery you gained and used each day.</p><div class="chart"><canvas id="c6"></canvas></div></section>
   <section><h3>Training load</h3><p>Garmin's training load per day, summed over workouts.</p><div class="chart"><canvas id="c5"></canvas></div></section>`;
 
@@ -922,8 +920,6 @@
             mk('c2', 'line', [ln('Resting HR (bpm)', 'rhr', '--heart'), ln('HRV 7-day average (ms)', 'hrv_weekly', '--hrv', { yAxisID: 'y1', borderWidth: 3 }),
                 ln('HRV night (ms)', 'hrv_last_night', '--hrv', { yAxisID: 'y1', borderWidth: 1.5, borderDash: [4, 3], borderColor: css('--hrv') + '99', backgroundColor: css('--hrv') + '99', pointRadius: 1.5 }),
                 ln('HRV balanced low (ms)', 'hrv_baseline_low', '--hrv', { ...band, fill: '+1', legendText: 'HRV balanced range' }), ln('HRV balanced high (ms)', 'hrv_baseline_high', '--hrv', { ...band, noLegend: true })], { y: { title: { display: true, text: 'bpm' } }, y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'ms' } } });
-            mk('c3', 'bar', [bar('Steps', DAILY.map(r => r.steps), '--steps'), ln('Goal', 'step_goal', '--ink', { borderDash: [5, 4], pointRadius: 0 })], { y: { beginAtZero: true } });
-            mk('c4', 'line', [ln('Average stress', 'stress_avg', '--heart')], { y: { beginAtZero: true, title: { display: true, text: 'stress' } } });
             mk('c6', 'bar', [bar('Battery gained', DAILY.map(r => r.bb_charged), '--steps'), bar('Battery used', DAILY.map(r => r.bb_drained), '--awake')], { y: { beginAtZero: true, title: { display: true, text: 'body battery' } } });
             const load = {}; ACTS.forEach(a => { const d = a.start_local.slice(0, 10); load[d] = (load[d] || 0) + (a.training_load || 0) });
             mk('c5', 'bar', [bar('Training load', DAILY.map(r => load[r.date] ?? 0), '--deep')], { y: { beginAtZero: true } });
