@@ -53,6 +53,10 @@ class SmokeTest(TempDbCase):
         self.assertEqual(client.get("/api/status").status_code, 200)
         self.assertEqual(client.get("/api/export").status_code, 200)
         self.assertIn("Garmin dashboard", client.get("/").text)
+        for path in ("/app.js", "/style.css"):
+            r = client.get(path)
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(r.headers["cache-control"], "no-cache")
 
 
 class SchemaTest(TempDbCase):

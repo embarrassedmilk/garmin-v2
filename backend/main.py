@@ -113,4 +113,13 @@ def export(days: int = 28):
     return JSONResponse(build_export(days), headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
-app.mount("/", StaticFiles(directory=Path(__file__).resolve().parent.parent / "frontend", html=True), name="ui")
+class Frontend(StaticFiles):
+    """Ask browsers to check for a newer file on every load (a cheap 304 when nothing changed), so the phone never mixes a new index.html with an old app.js."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", Frontend(directory=Path(__file__).resolve().parent.parent / "frontend", html=True), name="ui")
