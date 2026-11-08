@@ -10,6 +10,7 @@
 set -eu
 TIMER=garmin-sync.timer
 DROPIN=/etc/systemd/system/$TIMER.d/schedule.conf
+[ -f "/etc/systemd/system/$TIMER" ] || { echo "$TIMER isn't installed yet: run 'sh deploy/install.sh' first" >&2; exit 1; }
 
 case "${1:-status}" in
   status)
