@@ -702,6 +702,15 @@ class TagTest(TempDbCase):
         self.assertTrue(all("tags" not in d for d in export["daily"]))
 
 
+class DbLocationTest(TempDbCase):
+    def test_custom_location_with_missing_folder_is_refused_not_created(self):
+        missing = db.DB_PATH.parent / "unmounted" / "garmin"
+        with patch.object(db, "DB_PATH", missing / "garmin.db"):
+            with self.assertRaisesRegex(RuntimeError, "mounted"):
+                db.connect()
+        self.assertFalse(missing.parent.exists())
+
+
 class MigrationTest(TempDbCase):
     def test_old_daily_table_gets_stress_columns_and_keeps_rows(self):
         db.DB_PATH.parent.mkdir(parents=True, exist_ok=True)

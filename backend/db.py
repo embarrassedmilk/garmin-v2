@@ -3,7 +3,11 @@ import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(os.getenv("GARMIN_DB", Path(__file__).resolve().parent.parent / "data" / "garmin.db"))
+from dotenv import load_dotenv
+
+load_dotenv()  # before reading GARMIN_DB, so it can be set in .env
+DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "garmin.db"
+DB_PATH = Path(os.getenv("GARMIN_DB") or DEFAULT_DB_PATH).expanduser()
 
 DAILY_COLS = [
     "steps", "step_goal", "distance_m", "calories_total", "calories_active",
@@ -52,7 +56,12 @@ RUN_SUBTYPES = {"running": "road", "trail_running": "trail", "treadmill_running"
 
 
 def connect() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if DB_PATH == DEFAULT_DB_PATH:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    elif not DB_PATH.parent.is_dir():
+        # A custom location may be on a disk that isn't mounted: creating the folder would start
+        # an empty database underneath the mount point instead of using the real one.
+        raise RuntimeError(f"Database folder {DB_PATH.parent} not found (GARMIN_DB). Is the disk mounted?")
     c = sqlite3.connect(DB_PATH)
     c.row_factory = sqlite3.Row
     c.executescript(SCHEMA)
