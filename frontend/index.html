@@ -615,6 +615,30 @@
             }
         }
 
+        /* Pull-to-refresh arrow, only in the home-screen app (see the script). */
+        #ptr {
+            position: fixed;
+            top: calc(env(safe-area-inset-top) - 40px);
+            left: calc(50% - 18px);
+            width: 36px;
+            height: 36px;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--line);
+            border-radius: 50%;
+            background: var(--bg);
+            color: var(--mute);
+            font-size: 1.2rem;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 5
+        }
+
+        #ptr.ready {
+            color: var(--ink);
+            border-color: var(--mute)
+        }
+
         /* Phone width (iPhone 13 Pro is 390 px). */
         @media (max-width:600px) {
             main {
@@ -1128,6 +1152,28 @@
             try { const r = await api('/api/sync', { method: 'POST' }); if (r.errors.length) say('Some data could not be synced: ' + r.errors.join(' | ')); await load() }
             catch (err) { say('Sync failed: ' + err.message) } finally { b.disabled = false; b.textContent = 'Sync now' }
         };
+        // Pull down at the top of the page to reload it. Only in the home-screen app: Safari itself already has this.
+        if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) {
+            const ptr = document.body.appendChild(Object.assign(document.createElement('div'), { id: 'ptr', textContent: '↻' })), PULL = 80;
+            let y0 = null, dy = 0;
+            const reset = () => { y0 = null; ptr.style.transform = ''; ptr.style.opacity = '' };
+            addEventListener('touchstart', e => { dy = 0; y0 = scrollY <= 0 && !$('#pop').open && e.touches.length === 1 ? e.touches[0].clientY : null }, { passive: true });
+            addEventListener('touchmove', e => {
+                if (y0 == null) return;
+                dy = Math.max(0, e.touches[0].clientY - y0);
+                ptr.style.transform = `translateY(${Math.min(dy, PULL * 1.5) * .8}px) rotate(${dy * 3}deg)`;
+                ptr.style.opacity = Math.min(dy / PULL, 1);
+                ptr.classList.toggle('ready', dy >= PULL);
+            }, { passive: true });
+            addEventListener('touchend', () => {
+                if (y0 == null) return;
+                if (dy < PULL) return reset();
+                try { sessionStorage.setItem('range', $('#range').value) } catch { }  // keep the selected range across the reload
+                location.reload();
+            });
+            addEventListener('touchcancel', reset);
+        }
+        try { const r = sessionStorage.getItem('range'); if (r) { $('#range').value = r; sessionStorage.removeItem('range') } } catch { }
         load().catch(e => say(e.message));
     </script>
 </body>
