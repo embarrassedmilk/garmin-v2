@@ -61,8 +61,41 @@ const RECOVERY_HELP = "Garmin's recovery time when the run ended, from an undocu
 const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
 const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
-// The Workouts view lists every stored workout, whatever the range: older years show the year.
+// The Workouts view lists every stored workout, whatever the range, grouped by month like a training log.
 const dayY = d => d.slice(0, 4) === todayIso().slice(0, 4) ? day(d) : new Date(d + 'T00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const hasDistance = t => /run|walk|hik|cycl|bik|swim|row|ski|paddl/.test(t);  // squash or HIIT pick up GPS drift, not distance
+const ACCENTS = { running: '--steps', trail_running: '--steps', treadmill_running: '--steps', hiit: '--heart', squash: '--deep', strength_training: '--awake', walking: '--light', cycling: '--rem' };
+const accent = a => ACCENTS[typeKey(a)] || '--hrv';
+function whenLabel(d) {  // like a phone's log: Today, Yesterday, weekday within the week, then the date
+    const ago = Math.round((new Date(todayIso() + 'T00:00') - new Date(d + 'T00:00')) / 864e5);
+    if (ago === 0) return 'Today';
+    if (ago === 1) return 'Yesterday';
+    return ago < 7 ? new Date(d + 'T00:00').toLocaleDateString(undefined, { weekday: 'long' }) : dayY(d);
+}
+
+function monthSummary(items, active) {
+    const n = items.length, sum = k => items.reduce((t, a) => t + (a[k] || 0), 0);
+    const time = sum('duration_s'), dist = items.filter(a => hasDistance(typeKey(a))), km = dist.reduce((t, a) => t + (a.distance_m || 0), 0) / 1000;
+    const runs = /run/.test(active), kcal = sum('calories'), load = sum('training_load');
+    const big = v => Math.round(v).toLocaleString();
+    const row = (label, total, avg) => `<tr><th>${label}</th><td>${total}</td><td>${avg ?? ''}</td></tr>`;
+    const runKm = runs && km ? dist.reduce((t, a) => t + (a.duration_s || 0), 0) / 60 / km : null;
+    return `<table class="month-sum"><thead><tr><th></th><th>Total</th><th>Average</th></tr></thead><tbody>
+    ${row(runs ? 'Runs' : 'Workouts', n)}${row('Time', hm(time), hm(time / n))}
+    ${km >= 1 ? row('Distance', num(km, 1) + ' km', num(km / dist.length, 1) + ' km') : ''}${runKm ? row('Pace', '', pace(runKm) + ' /km') : ''}
+    ${kcal ? row('Calories', big(kcal) + ' kcal', big(kcal / n) + ' kcal') : ''}${load ? row('Training load', big(load), big(load / n)) : ''}</tbody></table>`;
+}
+
+function workoutCard(a) {
+    const t = typeKey(a), d = a.start_local.slice(0, 10), km = hasDistance(t) && a.distance_m > 100 ? a.distance_m / 1000 : null;
+    const big = km ? `${num(km, 2)}<small>km</small>` : esc(hm(a.duration_s));
+    const bits = [km && hm(a.duration_s), km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km', a.avg_hr && num(a.avg_hr) + ' bpm',
+        a.run?.primary_benefit && esc(benefit(a.run.primary_benefit)), a.training_load != null && 'Load ' + num(a.training_load)].filter(Boolean);
+    const inner = `<span class="w-title">${esc(a.name || typeLabel(t))}</span><span class="w-when">${whenLabel(d)}</span>
+      <b style="color:var(${accent(a)})">${big}</b><span class="w-bits">${bits.join(' · ')}</span>`;
+    return a.run ? `<button class="wcard" data-run="${a.id}" aria-label="${esc(a.name || typeLabel(t))}, ${day(d)}: open details">${inner}<i aria-hidden="true">›</i></button>`
+        : `<div class="wcard">${inner}</div>`;
+}
 
 function workoutsHtml() {
     const counts = {};
@@ -70,11 +103,16 @@ function workoutsHtml() {
     const types = Object.keys(counts).sort((x, y) => counts[y] - counts[x] || x.localeCompare(y));
     const active = counts[workoutTab] ? workoutTab : 'all';
     const tab = (key, label, n) => `<button data-tab="${esc(key)}" aria-pressed="${key === active}">${esc(label)} <span>${n}</span></button>`;
-    const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', ACTS.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
+    const tabs = types.length > 1 ? `<div class="chips" role="group" aria-label="Workout type">${tab('all', 'All', ACTS.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
     const list = active === 'all' ? ACTS : ACTS.filter(a => typeKey(a) === active), shown = list.slice(0, workoutsShown);
-    const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}. <button data-more>Show ${Math.min(WORKOUT_PAGE, list.length - shown.length)} more</button></p>` : '';
-    const since = ACTS.length ? ` since ${dayY(ACTS.at(-1).start_local.slice(0, 10))}` : '';
-    return `<h3>Workouts${since}</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th class="opt">Benefit${info(BENEFIT_HELP)}</th><th class="opt">Vert. osc.${info(VO_HELP)}</th><th class="opt">Aerobic / anaerobic</th><th class="opt">Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${dayY(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td class="opt">${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td class="opt">${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td class="opt">${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td class="opt">${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts synced yet.</td></tr>'}</tbody></table></div>${more}`;
+    if (!list.length) return `${tabs}<p class="empty">No workouts synced yet.</p>`;
+    const months = [...new Set(shown.map(a => a.start_local.slice(0, 7)))].map(m => {
+        const all = list.filter(a => a.start_local.startsWith(m));  // the summary covers the whole month, even before Show more
+        const name = new Date(m + '-01T00:00').toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+        return `<div class="month"><h3>${name}</h3>${monthSummary(all, active)}<div class="wcards">${shown.filter(a => a.start_local.startsWith(m)).map(workoutCard).join('')}</div></div>`;
+    }).join('');
+    const more = list.length > shown.length ? `<p class="more"><button data-more>Show ${Math.min(WORKOUT_PAGE, list.length - shown.length)} more</button> <span>${shown.length} of ${list.length}</span></p>` : '';
+    return `${tabs}${months}${more}`;
 }
 
 function tagsHtml() {
@@ -303,7 +341,7 @@ $('#pop').onkeydown = e => {  // arrow keys step through nights in the sleep pop
     if (to && !e.target.matches('input, select')) $(`#pop [aria-label="${to}"]:not(:disabled)`)?.click();
 };
 $('#app').onclick = e => {
-    const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
+    const tr = e.target.closest('[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
     if (e.target.closest('[data-more]')) { workoutsShown += WORKOUT_PAGE; $('#workouts').innerHTML = workoutsHtml() }
     if (tab) {
         workoutTab = tab.dataset.tab; workoutsShown = WORKOUT_PAGE;

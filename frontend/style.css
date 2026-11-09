@@ -11,7 +11,8 @@
     --heart: #c4513a;
     --hrv: #2f7f8f;
     --steps: #3a8a6c;
-    --warn: #b5402a
+    --warn: #b5402a;
+    --card: #ffffff
 }
 
 @media (prefers-color-scheme:dark) {
@@ -27,7 +28,8 @@
         --heart: #e8745e;
         --hrv: #52b3c4;
         --steps: #5bbb98;
-        --warn: #f08a74
+        --warn: #f08a74;
+        --card: #17222d
     }
 }
 
@@ -326,6 +328,149 @@ th {
 .tabs.views {
     margin: -12px 0 24px;
     font-size: 1.05rem
+}
+
+/* Workouts view: type chips, then per month a summary and one card per workout. */
+.chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 0 8px;
+    padding-bottom: 2px
+}
+
+.chips button {
+    flex: none;
+    border-radius: 999px;
+    padding: 7px 16px;
+    background: var(--card);
+    font-weight: 600
+}
+
+.chips button span {
+    color: var(--mute);
+    font-weight: 400;
+    font-size: .85rem
+}
+
+.chips button[aria-pressed="true"] {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg)
+}
+
+.chips button[aria-pressed="true"] span {
+    color: inherit;
+    opacity: .7
+}
+
+.month h3 {
+    font-size: 1.5rem;
+    font-weight: 650;
+    margin: 28px 0 8px
+}
+
+table.month-sum {
+    width: auto;
+    margin: 0 0 16px;
+    font-variant-numeric: tabular-nums
+}
+
+table.month-sum th,
+table.month-sum td {
+    border: 0;
+    padding: 1px 28px 1px 0;
+    white-space: nowrap
+}
+
+table.month-sum thead th {
+    color: var(--mute);
+    font-weight: 400;
+    font-size: .85rem
+}
+
+table.month-sum tbody th {
+    font-weight: 400;
+    color: var(--mute);
+    text-align: left
+}
+
+table.month-sum td {
+    font-weight: 600
+}
+
+.wcards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px
+}
+
+.wcard {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    align-items: baseline;
+    text-align: left;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 14px 18px;
+    font: inherit;
+    color: var(--ink);
+    cursor: default
+}
+
+button.wcard {
+    cursor: pointer;
+    padding-right: 34px
+}
+
+.wcard .w-title {
+    font-weight: 600
+}
+
+.wcard .w-when {
+    color: var(--mute);
+    font-size: .88rem
+}
+
+.wcard b {
+    grid-column: 1 / -1;
+    font-size: 2.1rem;
+    font-weight: 650;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums
+}
+
+.wcard b small {
+    font-size: 1.1rem;
+    margin-left: 3px
+}
+
+.wcard .w-bits {
+    grid-column: 1 / -1;
+    color: var(--mute);
+    font-size: .88rem
+}
+
+.wcard i {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-style: normal;
+    font-size: 1.6rem;
+    color: var(--mute)
+}
+
+#workouts p.more {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 20px;
+    color: var(--mute)
 }
 
 #app>#workouts:first-child {
@@ -714,10 +859,6 @@ section h4 {
     th,
     td {
         padding: 9px 8px 9px 0
-    }
-
-    #workouts td:nth-child(2) {
-        white-space: normal
     }
 
     .tagbar input:not([type]) {
