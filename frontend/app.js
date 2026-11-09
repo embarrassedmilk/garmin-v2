@@ -209,6 +209,7 @@ function showPopup(title, sub, body) {
   <header><div><h2 id="pop-title">${title}</h2><span class="bar">${sub}</span></div><button autofocus onclick="$('#pop').close()">Close</button></header>
   ${body}</div>`;
     if (!dlg.open) dlg.showModal();
+    dlg.scrollTop = 0;  // the one dialog is reused, so it would keep the last pop-up's scroll position
 }
 
 const STRESS_BANDS = [['Rest', 'stress_rest_s'], ['Low', 'stress_low_s'], ['Medium', 'stress_med_s'], ['High', 'stress_high_s'], ['Activity', 'stress_activity_s'], ['Uncategorized', 'stress_uncat_s']];
