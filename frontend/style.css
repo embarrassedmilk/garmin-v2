@@ -328,6 +328,10 @@ th {
     font-size: 1.05rem
 }
 
+#app>#workouts:first-child {
+    padding-top: 0  /* the view tabs above already leave room */
+}
+
 .tabs span {
     font-size: .85rem;
     font-weight: 400;
