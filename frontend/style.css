@@ -57,13 +57,32 @@ main {
     padding: calc(28px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) calc(64px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left))
 }
 
+/* Title and controls on one row, view tabs below. The controls only belong to the Graphs view; the row keeps
+   its height without them, so the tabs don't move when switching. On the phone the controls go below the tabs. */
 header {
     display: flex;
     flex-wrap: wrap;
     gap: 12px 24px;
     align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: 28px
+    justify-content: space-between
+}
+
+main>header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "title bar" "views views";
+    gap: 16px 24px;
+    align-items: center;
+    margin-bottom: 24px
+}
+
+main>header h1 {
+    grid-area: title
+}
+
+main>header .bar {
+    grid-area: bar;
+    min-height: 38px  /* a button's height */
 }
 
 h1 {
@@ -326,7 +345,8 @@ th {
 }
 
 .tabs.views {
-    margin: -12px 0 24px;
+    grid-area: views;
+    margin: 0;
     font-size: 1.05rem
 }
 
@@ -782,8 +802,15 @@ section h4 {
         padding-right: max(16px, env(safe-area-inset-right))
     }
 
-    header {
+    main>header {
+        grid-template-columns: 1fr;
+        grid-template-areas: "title" "views" "bar";
+        gap: 12px;
         margin-bottom: 20px
+    }
+
+    main>header .bar {
+        min-height: 0
     }
 
     .bar {

@@ -89,7 +89,7 @@ function monthSummary(items, active) {
 function workoutCard(a) {
     const t = typeKey(a), d = a.start_local.slice(0, 10), km = hasDistance(t) && a.distance_m > 100 ? a.distance_m / 1000 : null;
     const big = km ? `${num(km, 2)}<small>km</small>` : esc(hm(a.duration_s));
-    const bits = [km && hm(a.duration_s), km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km', a.avg_hr && num(a.avg_hr) + ' bpm',
+    const bits = [km && hm(a.duration_s), km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km', a.avg_hr && num(a.avg_hr) + ' bpm', a.calories && Math.round(a.calories).toLocaleString() + ' kcal',
         a.run?.primary_benefit && esc(benefit(a.run.primary_benefit)), a.training_load != null && 'Load ' + num(a.training_load)].filter(Boolean);
     const inner = `<span class="w-title">${esc(a.name || typeLabel(t))}</span><span class="w-when">${whenLabel(d)}</span>
       <b style="color:var(${accent(a)})">${big}</b><span class="w-bits">${bits.join(' · ')}</span>`;
@@ -140,7 +140,7 @@ function render() {
     charts.forEach(c => c.destroy()); charts = [];
     const app = $('#app'), view = viewNow();
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
-    $('#range').hidden = view === 'workouts';  // the range only applies to the graphs (and the export)
+    ['#range', '#export', '#sync'].forEach(s => { $(s).hidden = view === 'workouts' });  // graphs-only controls; the header keeps its height
     if (view === 'workouts') { app.innerHTML = `<section id="workouts">${workoutsHtml()}</section>`; return }
     if (!DAILY.length) { app.innerHTML = '<div class="empty">No data yet. Select <b>Sync now</b> to load the last 28 days from Garmin.</div>'; return }
     const L = [...DAILY].reverse(), last = k => (L.find(r => r[k] != null) || {})[k];
