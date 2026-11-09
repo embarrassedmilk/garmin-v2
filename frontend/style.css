@@ -539,6 +539,15 @@ dialog {
     border-radius: 10px
 }
 
+/* While a pop-up is open only the pop-up scrolls: iOS otherwise passes the scroll on to the page behind it. */
+html:has(dialog[open]) {
+    overflow: hidden
+}
+
+dialog {
+    overscroll-behavior: contain
+}
+
 dialog::backdrop {
     background: rgba(0, 0, 0, .5)
 }
