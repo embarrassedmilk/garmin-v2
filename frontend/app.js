@@ -351,13 +351,19 @@ $('#pop').onkeydown = e => {  // arrow keys step through nights in the sleep pop
     const to = { ArrowLeft: 'Previous night', ArrowRight: 'Next night' }[e.key];
     if (to && !e.target.matches('input, select')) $(`#pop [aria-label="${to}"]:not(:disabled)`)?.click();
 };
+function redrawWorkouts() {  // keeps the type chips' sideways scroll, which a fresh chip row would lose
+    const x = $('.chips')?.scrollLeft || 0;
+    $('#workouts').innerHTML = workoutsHtml();
+    if ($('.chips')) $('.chips').scrollLeft = x;
+}
+
 $('#app').onclick = e => {
     const tr = e.target.closest('[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
-    if (e.target.closest('[data-more]')) { workoutsShown += WORKOUT_PAGE; $('#workouts').innerHTML = workoutsHtml() }
+    if (e.target.closest('[data-more]')) { workoutsShown += WORKOUT_PAGE; redrawWorkouts() }
     if (tab) {
         workoutTab = tab.dataset.tab; workoutsShown = WORKOUT_PAGE;
-        $('#workouts').innerHTML = workoutsHtml();
-        [...document.querySelectorAll('[data-tab]')].find(b => b.dataset.tab === workoutTab).focus();
+        redrawWorkouts();
+        [...document.querySelectorAll('[data-tab]')].find(b => b.dataset.tab === workoutTab).focus({ preventScroll: true });
     }
     if (tr) openRun(ACTS.find(a => String(a.id) === tr.dataset.run)).catch(err => say(err.message));
     if (s) openStress(s.dataset.stress).catch(err => say(err.message));
