@@ -208,8 +208,18 @@ function showPopup(title, sub, body) {
     dlg.innerHTML = `<div class="pop">
   <header><div><h2 id="pop-title">${title}</h2><span class="bar">${sub}</span></div><button autofocus onclick="$('#pop').close()">Close</button></header>
   ${body}</div>`;
-    if (!dlg.open) dlg.showModal();
-    dlg.scrollTop = 0;  // the one dialog is reused, so it would keep the last pop-up's scroll position
+    if (!dlg.open) { pinPage(true); dlg.showModal() }
+    // The one dialog is reused, so it would keep the last pop-up's scroll position; iOS can restore it after the
+    // first reset, hence once more after the next frame.
+    dlg.scrollTop = 0; requestAnimationFrame(() => { dlg.scrollTop = 0 });
+}
+
+// While a pop-up is open the page behind it is pinned in place, so only the pop-up scrolls. iOS ignores
+// overflow: hidden for touch scrolling, so the body is fixed at its current offset and put back on close.
+function pinPage(on) {
+    const b = document.body;
+    if (on && !b.style.position) { b.dataset.y = scrollY; Object.assign(b.style, { position: 'fixed', top: -scrollY + 'px', left: '0', right: '0' }) }
+    if (!on && b.style.position) { Object.assign(b.style, { position: '', top: '', left: '', right: '' }); scrollTo(0, +b.dataset.y) }
 }
 
 const STRESS_BANDS = [['Rest', 'stress_rest_s'], ['Low', 'stress_low_s'], ['Medium', 'stress_med_s'], ['High', 'stress_high_s'], ['Activity', 'stress_activity_s'], ['Uncategorized', 'stress_uncat_s']];
@@ -331,7 +341,7 @@ async function openRun(a) {
     line('run-hr', 'avg_hr', '--heart', { tooltip: { callbacks: { label: c => c.parsed.y + ' bpm' } } });
 }
 
-$('#pop').onclose = () => { popCharts.forEach(c => c.destroy()); popCharts = []; popMap?.remove(); popMap = null };
+$('#pop').onclose = () => { pinPage(false); popCharts.forEach(c => c.destroy()); popCharts = []; popMap?.remove(); popMap = null };
 $('#pop').onclick = e => {
     if (e.target === e.currentTarget) e.currentTarget.close();
     const night = e.target.closest('[data-night]');

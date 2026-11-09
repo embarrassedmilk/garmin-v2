@@ -539,11 +539,7 @@ dialog {
     border-radius: 10px
 }
 
-/* While a pop-up is open only the pop-up scrolls: iOS otherwise passes the scroll on to the page behind it. */
-html:has(dialog[open]) {
-    overflow: hidden
-}
-
+/* Scrolling stops at the pop-up's ends instead of passing on to the page (pinned by pinPage in app.js). */
 dialog {
     overscroll-behavior: contain
 }
