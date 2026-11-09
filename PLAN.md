@@ -89,6 +89,9 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - How much history to backfill.
 - Which insights are worth showing every week.
 
+## Ideas
+Unsorted ideas, often added from the phone. Move them into a phase when picked up.
+
 ## Notes / log
 - 2026-10-31: first explore run; all 15 endpoints worked. Chose Garmin's official client over third-party `gcpapi-sync`.
 - 2026-10-31: dashboard v1 and export button built in chat.
