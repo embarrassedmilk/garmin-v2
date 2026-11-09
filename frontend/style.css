@@ -323,6 +323,11 @@ th {
     border-bottom-color: var(--ink)
 }
 
+.tabs.views {
+    margin: -12px 0 24px;
+    font-size: 1.05rem
+}
+
 .tabs span {
     font-size: .85rem;
     font-weight: 400;

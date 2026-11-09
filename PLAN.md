@@ -40,7 +40,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] `scripts/explore.py` using the official client; raw dumps in `raw_dumps/`
 - [ ] Findings in `docs/data-notes.md` (still a stub)
 - [x] v1 metrics chosen
-- [ ] How far back does each endpoint's history go? A 28-day sync on 2026-11-01 returned nothing before 2026-10-15, so one older-window probe should settle it. HRV is settled: a 365-day request on 2026-11-08 returned nothing before 2026-10-16
+- [ ] How far back does each endpoint's history go? A 28-day sync on 2026-11-01 returned nothing before 2026-10-15, so one older-window probe should settle it. HRV is settled: a 365-day request on 2026-11-08 returned nothing before 2026-10-16. Activities too: nothing before 2026-10-16 (checked 2026-11-09)
 
 ### 3. Data layer
 - [x] `backend/db.py`: SQLite schema (daily, activities, meta)
@@ -54,6 +54,7 @@ Garmin Personal API -> sync.py -> SQLite -> FastAPI -> local dashboard
 - [x] Sleep hero, stat row (resting HR, HRV, steps, stress, body battery)
 - [x] Charts: sleep stages + score, resting HR + HRV, steps, stress, body battery, training load
 - [x] Workouts table, with a tab per workout type
+- [x] Graphs and Workouts views; Workouts shows every stored workout, not just the selected range
 - [x] Run pop-up: summary stats, time in each zone, km splits
 - [x] Stress pop-up: time in each band, body battery curve (the API has no stress readings through the day)
 - [x] Range select: 7 / 14 / 28 days (extend to 90 after backfill)
@@ -91,7 +92,6 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 
 ## Ideas
 Unsorted ideas, often added from the phone. Move them into a phase when picked up.
-- Workouts for longer periods.
 - Check if sleep restlessness can be adjusted.
 
 ## Notes / log
@@ -105,4 +105,5 @@ Unsorted ideas, often added from the phone. Move them into a phase when picked u
 - 2026-11-03: added detailed running fields to the export, using the activity file for laps (new dependency: `garmin-fit-sdk`). Sleep SpO2 is null since 2026-10-28 because Garmin returns none, not because of the parser. Added VO2 max from an undocumented activity file field, after matching it to the watch. Export went from 15,025 to 27,100 bytes on the 20-day range.
 - 2026-11-06: Garmin Connect's Lifestyle Logging can't be read through the Personal API (no client method; `/lifestylelogging-service/dailyLog/{date}` returns 404). Built the tag log on the dashboard instead: `tags` table, `GET /api/tags`, `PUT /api/tags/{day}`, `tags` on daily export entries.
 - 2026-11-08: HRV history starts 2026-10-16, so there's nothing older to backfill. Now storing Garmin's HRV status, balanced range and highest 5 minutes per night, plus the 5-minute readings (`hrv_readings`, one `get_daily_hrv` call per night, once). Onboarding ended around 2026-11-03.
+- 2026-11-09: split the page into Graphs and Workouts views. Workouts lists every stored workout (25 at a time) instead of the selected range. No backfill needed: Garmin has no activities before 2026-10-16, and the daily sync keeps adding new ones.
 - 2026-11-08: moved hosting to the Raspberry Pi (the laptop can't stay on). Database path set by `GARMIN_DB`, which now refuses a missing folder. Added back a scheduled sync now that something is always on: daily systemd timer, easy to change or turn off.

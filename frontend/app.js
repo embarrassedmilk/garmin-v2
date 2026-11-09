@@ -6,17 +6,18 @@ const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 const pace = m => { if (!m) return '–'; const s = Math.round(m * 60); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };
 const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(Math.round(m % 60)).padStart(2, '0')}`;
 const barRow = (label, share, value) => `<div class="zone"><span>${label}</span><div><i style="width:${share}%"></i></div><em>${value} · ${num(share)}%</em></div>`;
-const STALE_MS = 36 * 3600 * 1000, MAX_WORKOUTS = 12;
+const STALE_MS = 36 * 3600 * 1000, WORKOUT_PAGE = 25;
 const PRESET_TAGS = ['alcohol', 'late meal', 'late caffeine', 'illness', 'travel'];
 const todayIso = () => new Date().toLocaleDateString('en-CA');  // YYYY-MM-DD, local
-let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], TAGS = { days: {}, known: [] }, workoutTab = 'all', tagDay = todayIso();
+let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], TAGS = { days: {}, known: [] }, workoutTab = 'all', workoutsShown = WORKOUT_PAGE, tagDay = todayIso();
+const viewNow = () => location.hash === '#workouts' ? 'workouts' : 'graphs';  // in the URL, so a reload keeps the view
 
 async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
 function say(t) { const m = $('#msg'); m.hidden = !t; m.textContent = t || '' }
 
 async function load() {
     const days = +$('#range').value;
-    [DAILY, ACTS, TAGS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities?limit=200'), api('/api/tags')]);
+    [DAILY, ACTS, TAGS] = await Promise.all([api('/api/daily?days=' + days), api('/api/activities'), api('/api/tags')]);
     const st = await api('/api/status');
     const okAt = st && st.last_ok_at && new Date(st.last_ok_at), okText = okAt && okAt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
     $('#synced').textContent = okAt ? 'Synced ' + okText : 'Not synced yet';
@@ -60,16 +61,20 @@ const RECOVERY_HELP = "Garmin's recovery time when the run ended, from an undocu
 const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
 const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
+// The Workouts view lists every stored workout, whatever the range: older years show the year.
+const dayY = d => d.slice(0, 4) === todayIso().slice(0, 4) ? day(d) : new Date(d + 'T00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+
 function workoutsHtml() {
-    const inRange = ACTS.filter(a => a.start_local.slice(0, 10) >= DAILY[0].date), counts = {};
-    inRange.forEach(a => { counts[typeKey(a)] = (counts[typeKey(a)] || 0) + 1 });
+    const counts = {};
+    ACTS.forEach(a => { counts[typeKey(a)] = (counts[typeKey(a)] || 0) + 1 });
     const types = Object.keys(counts).sort((x, y) => counts[y] - counts[x] || x.localeCompare(y));
-    const active = counts[workoutTab] ? workoutTab : 'all';  // workoutTab is kept, so a wider range brings the tab back
+    const active = counts[workoutTab] ? workoutTab : 'all';
     const tab = (key, label, n) => `<button data-tab="${esc(key)}" aria-pressed="${key === active}">${esc(label)} <span>${n}</span></button>`;
-    const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', inRange.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
-    const list = active === 'all' ? inRange : inRange.filter(a => typeKey(a) === active), shown = list.slice(0, MAX_WORKOUTS);
-    const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}.</p>` : '';
-    return `<h3>Recent workouts</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th class="opt">Benefit${info(BENEFIT_HELP)}</th><th class="opt">Vert. osc.${info(VO_HELP)}</th><th class="opt">Aerobic / anaerobic</th><th class="opt">Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${day(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td class="opt">${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td class="opt">${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td class="opt">${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td class="opt">${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts in this period.</td></tr>'}</tbody></table></div>${more}`;
+    const tabs = types.length > 1 ? `<div class="tabs" role="group" aria-label="Workout type">${tab('all', 'All', ACTS.length)}${types.map(t => tab(t, typeLabel(t), counts[t])).join('')}</div>` : '';
+    const list = active === 'all' ? ACTS : ACTS.filter(a => typeKey(a) === active), shown = list.slice(0, workoutsShown);
+    const more = list.length > shown.length ? `<p class="more">Showing the latest ${shown.length} of ${list.length}. <button data-more>Show ${Math.min(WORKOUT_PAGE, list.length - shown.length)} more</button></p>` : '';
+    const since = ACTS.length ? ` since ${dayY(ACTS.at(-1).start_local.slice(0, 10))}` : '';
+    return `<h3>Workouts${since}</h3>${tabs}<div class="wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Time</th><th>Distance</th><th>Avg HR</th><th class="opt">Benefit${info(BENEFIT_HELP)}</th><th class="opt">Vert. osc.${info(VO_HELP)}</th><th class="opt">Aerobic / anaerobic</th><th class="opt">Load</th></tr></thead><tbody>${shown.map(a => `<tr${a.run ? ` data-run="${a.id}"` : ''}><td>${dayY(a.start_local.slice(0, 10))}</td><td>${a.run ? `<button class="link">${esc(a.name || a.type)}</button>` : esc(a.name || a.type)}</td><td>${hm(a.duration_s)}</td><td>${a.distance_m > 100 ? num(a.distance_m / 1000, 1) + ' km' : '–'}</td><td>${num(a.avg_hr)}</td><td class="opt">${esc(benefit(a.run?.primary_benefit)) || '–'}</td><td class="opt">${a.run?.avg_vertical_oscillation_cm != null ? num(a.run.avg_vertical_oscillation_cm, 1) + ' cm' : '–'}</td><td class="opt">${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}</td><td class="opt">${num(a.training_load)}</td></tr>`).join('') || '<tr><td colspan="9">No workouts synced yet.</td></tr>'}</tbody></table></div>${more}`;
 }
 
 function tagsHtml() {
@@ -95,7 +100,10 @@ async function saveTags(list, refocus) {
 
 function render() {
     charts.forEach(c => c.destroy()); charts = [];
-    const app = $('#app');
+    const app = $('#app'), view = viewNow();
+    document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
+    $('#range').hidden = view === 'workouts';  // the range only applies to the graphs (and the export)
+    if (view === 'workouts') { app.innerHTML = `<section id="workouts">${workoutsHtml()}</section>`; return }
     if (!DAILY.length) { app.innerHTML = '<div class="empty">No data yet. Select <b>Sync now</b> to load the last 28 days from Garmin.</div>'; return }
     const L = [...DAILY].reverse(), last = k => (L.find(r => r[k] != null) || {})[k];
     const sl = L.find(r => r.sleep_s != null) || {}, tot = (sl.deep_s || 0) + (sl.light_s || 0) + (sl.rem_s || 0) + (sl.awake_s || 0) || 1;
@@ -114,7 +122,6 @@ function render() {
     <div class="stat"><small>Body battery now</small><b>${num(t.bb_latest ?? last('bb_latest'))}</b><em>${num(t.bb_min)}–${num(t.bb_max)} today</em></div>
   </div>
   <section id="tags">${tagsHtml()}</section>
-  <section id="workouts">${workoutsHtml()}</section>
   <section><h3>Sleep</h3><p>Hours per stage, and Garmin's overall score.</p><div class="chart"><canvas id="c1"></canvas></div></section>
   <section><h3>Resting heart rate and HRV</h3><p>Resting heart rate (left axis) and HRV (right axis). The shaded band is Garmin's balanced HRV range, worked out from your own recent weeks; it's missing for nights before Garmin had enough data. Garmin's HRV status compares the solid 7-day average with the band, not single nights (dotted), so one low night can sit below the band while the status stays balanced.</p><div class="chart"><canvas id="c2"></canvas></div></section>
   <section><h3>Body battery</h3><p>How much body battery you gained and used each day.</p><div class="chart"><canvas id="c6"></canvas></div></section>
@@ -297,8 +304,9 @@ $('#pop').onkeydown = e => {  // arrow keys step through nights in the sleep pop
 };
 $('#app').onclick = e => {
     const tr = e.target.closest('tr[data-run]'), s = e.target.closest('[data-stress]'), tab = e.target.closest('[data-tab]');
+    if (e.target.closest('[data-more]')) { workoutsShown += WORKOUT_PAGE; $('#workouts').innerHTML = workoutsHtml() }
     if (tab) {
-        workoutTab = tab.dataset.tab;
+        workoutTab = tab.dataset.tab; workoutsShown = WORKOUT_PAGE;
         $('#workouts').innerHTML = workoutsHtml();
         [...document.querySelectorAll('[data-tab]')].find(b => b.dataset.tab === workoutTab).focus();
     }
@@ -334,6 +342,11 @@ $('#export').onclick = async () => {
         if (err.name === 'NotAllowedError') location.href = url;  // the tap expired while the export loaded
         else if (err.name !== 'AbortError') say('Export failed: ' + err.message);
     }
+};
+document.querySelector('nav.views').onclick = e => {
+    const b = e.target.closest('[data-view]');
+    if (b && b.dataset.view !== viewNow()) history.replaceState(null, '', b.dataset.view === 'workouts' ? '#workouts' : location.pathname);
+    if (b) { render(); scrollTo(0, 0) }
 };
 $('#range').onchange = () => load().catch(e => say(e.message));
 $('#sync').onclick = async e => {

@@ -30,7 +30,7 @@ def daily(days: int = 28):
 
 
 @app.get("/api/activities")
-def activities(limit: int = 100):
+def activities(limit: int = -1):  # all stored workouts by default: a few hundred a year at most
     with db.connect() as c:
         rows = c.execute("SELECT * FROM activities ORDER BY start_local DESC LIMIT ?", (limit,)).fetchall()
     return [{**r, "run": run_fields(r) if r["type"] in db.RUN_SUBTYPES else None} for r in map(dict, rows)]
