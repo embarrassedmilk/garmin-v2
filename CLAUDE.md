@@ -37,6 +37,7 @@ Personal, single-user, local-only web dashboard for my Garmin watch metrics. Dat
 - No stress readings through the day: the client only has daily statistics, and `/wellness-service/wellness/dailyStress/{date}` returns 404 (checked 2026-11-03). Daily summaries do give time per band and max level. Closest substitute: `get_daily_body_battery(..., chunks=96)`, 15-minute readings (repeated timestamps have the same level; 28 and 31-day ranges work) plus `ACTIVITY`, `SLEEP`, `STRESS` and `RECOVERY` periods. Curves are stored in minutes after local midnight using the day's start offset, so a day with a clock change can run past 1440 and its times are an hour off after the change.
 - Per-km data exists only in the activity file (`lap_mesgs`); `get_activity` has only aggregate `splitSummaries`. Run summary fields (elevation, GAP, cadence, stride, HR zone seconds) are already in `search_activities`.
 - Lifestyle Logging tags entered in the Garmin Connect app are not readable: the client has no method for them, `/lifestylelogging-service/dailyLog/{date}` and similar paths return 404, and they don't appear in daily, sleep or HRV summaries (checked 2026-11-06). Tags have to be logged on the dashboard.
+- Gear (shoes and their distance) is not readable either: the client has no method for it, `/gear-service/gear/filterGear` (with or without `activityId`), `/gear-service/gear/user` and `/gear-service/gear` return 404, and neither `search_activities` nor `/activity-service/activity/{id}` has a gear field (checked 2026-11-11). Gear is assigned in Connect, not on the watch, so the activity file doesn't have it. No Gear tab for now; if it's wanted before Garmin exposes it, it would have to be tracked on the dashboard, like tags.
 - Sleep score factors (`daily.sleep_details`, JSON, not exported) have Garmin's rating and optimal range but no points. Only the overall score and the deep, light and REM percentages have a `value`; restlessness has no value anywhere in the summary.
 - Sleep SpO2 can be null. It has been null since 2026-10-28 because Garmin returns no SpO2 at all, sleep or all-day (last reading 2026-10-27 06:29), not because of the parser; Pulse Ox is probably off on the watch. Garmin's scores (stress, body battery, sleep stages) are wrist-based estimates, not clinical values.
 
@@ -63,6 +64,7 @@ Only add fields; existing ones stay as they are. Anything Garmin didn't return i
 3. Tests using sanitized fixtures from `raw_dumps/` for the parsers in `sync.py` and the stats in `export.py`.
 4. Fill in `docs/data-notes.md`; README.
 5. `insights.py` plus an insights panel in the UI, once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-10).
+6. Keep an eye on gear: when the Garmin client gets an update, check it for a gear method and probe the `/gear-service/` paths again; if they work, add a Gear tab as a third view.
 
 ## Decisions already made
 - uv for the environment; Python + FastAPI + SQLite + plain HTML/JS.

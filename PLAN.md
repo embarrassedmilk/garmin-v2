@@ -93,7 +93,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 ## Ideas
 Unsorted ideas, often added from the phone. Move them into a phase when picked up.
 - Check if sleep restlessness can be adjusted.
-- Tab with the gear information.
+- Tab with the gear information. On hold: the Personal API has no gear data (checked 2026-11-11, see log).
 
 ## Notes / log
 - 2026-10-31: first explore run; all 15 endpoints worked. Chose Garmin's official client over third-party `gcpapi-sync`.
@@ -108,3 +108,4 @@ Unsorted ideas, often added from the phone. Move them into a phase when picked u
 - 2026-11-08: HRV history starts 2026-10-16, so there's nothing older to backfill. Now storing Garmin's HRV status, balanced range and highest 5 minutes per night, plus the 5-minute readings (`hrv_readings`, one `get_daily_hrv` call per night, once). Onboarding ended around 2026-11-03.
 - 2026-11-08: moved hosting to the Raspberry Pi (the laptop can't stay on). Database path set by `GARMIN_DB`, which now refuses a missing folder. Added back a scheduled sync now that something is always on: daily systemd timer, easy to change or turn off.
 - 2026-11-09: split the page into Graphs and Workouts views. Workouts lists every stored workout (25 at a time) instead of the selected range. No backfill needed: Garmin has no activities before 2026-10-16, and the daily sync keeps adding new ones.
+- 2026-11-11: looked into a Gear tab. Gear can't be read through the Personal API (no client method; `/gear-service/` paths return 404; no gear field on activities). Not built; re-check when the client updates.
