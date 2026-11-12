@@ -160,8 +160,20 @@ function render() {
     markView(viewNow()); fill($('#app'), viewNow(), charts);
 }
 
+// The underline under the Graphs and Workouts tabs is one bar of its own, so a swipe can move it part of the way
+// from one tab to the other (p, 0 to 1), in step with the views.
+const viewTabs = document.querySelector('nav.views'), ink = viewTabs.appendChild(Object.assign(document.createElement('i'), { className: 'ink' }));
+function placeInk(from = viewNow(), to = from, p = 0, ms = 0) {
+    const a = viewTabs.querySelector(`[data-view=${from}]`), b = viewTabs.querySelector(`[data-view=${to}]`), ease = `${ms}ms cubic-bezier(.2,.7,.3,1)`;
+    ink.style.transition = ms ? `transform ${ease}, width ${ease}` : 'none';
+    ink.style.transform = `translateX(${a.offsetLeft + (b.offsetLeft - a.offsetLeft) * p}px)`;
+    ink.style.width = a.offsetWidth + (b.offsetWidth - a.offsetWidth) * p + 'px';
+}
+{ const ro = new ResizeObserver(() => placeInk()); viewTabs.querySelectorAll('button').forEach(b => ro.observe(b)) }  // tab widths change as the font loads and the bold moves
+
 function markView(view) {
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
+    placeInk(view);
     ['#range', '#export', '#sync'].forEach(s => { $(s).hidden = view === 'workouts' });  // graphs-only controls; the header keeps its height
 }
 
@@ -474,7 +486,10 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         fill(inner, v, peek.charts);
     };
     const closePeek = () => { peek.charts.forEach(c => c.destroy()); peek.remove(); peek = null; ctrls.forEach(c => slide(c, 0)) };
-    const place = ms => Promise.all([slide(peek, peek.side * innerWidth + dx, ms), slide(app, dx * .3, ms), ...ctrls.map(c => slide(c, dx * .3, ms))]);
+    const place = ms => {
+        placeInk(viewNow(), peek.view, Math.min(Math.abs(dx) / innerWidth, 1), ms);
+        return Promise.all([slide(peek, peek.side * innerWidth + dx, ms), slide(app, dx * .3, ms), ...ctrls.map(c => slide(c, dx * .3, ms))]);
+    };
     addEventListener('touchstart', e => {
         const t = e.touches[0], el = e.target;
         sx = e.touches.length === 1 && !$('#pop').open && !peek && t.clientX > 24 && t.clientX < innerWidth - 24
@@ -512,7 +527,7 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         closePeek(); scrollTo(0, keep);
     };
     addEventListener('touchend', finish);
-    addEventListener('touchcancel', () => { if (sx != null && lock === 'x') { dx = 0; slide(app, 0, 200); if (peek) closePeek() } sx = null });
+    addEventListener('touchcancel', () => { if (sx != null && lock === 'x') { dx = 0; slide(app, 0, 200); placeInk(); if (peek) closePeek() } sx = null });
 }
 $('#range').onchange = () => load().catch(e => say(e.message));
 $('#sync').onclick = async e => {

@@ -348,7 +348,22 @@ th {
 .tabs.views {
     grid-area: views;
     margin: 0;
-    font-size: 1.05rem
+    font-size: 1.05rem;
+    position: relative
+}
+
+/* Graphs and Workouts share one underline, which a swipe moves across (placeInk in app.js) */
+.tabs.views button[aria-pressed="true"] {
+    border-bottom-color: transparent
+}
+
+.tabs.views .ink {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--ink);
+    pointer-events: none
 }
 
 /* Workouts view: type chips, then per month a summary and one card per workout. */
