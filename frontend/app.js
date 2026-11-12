@@ -461,8 +461,11 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         Object.assign(peek.style, { top: top + 'px', height: innerHeight - top + 'px' });
         const inner = peek.appendChild(Object.assign(document.createElement('div'), { className: 'peek-view' }));
         Object.assign(inner.style, { marginLeft: r.left + 'px', width: r.width + 'px', marginTop: end - top + 'px' });
+        // The copies go in a .bar of their own, so they get the controls row's font and padding.
+        const bar = boxes.length ? peek.appendChild(Object.assign(document.createElement('div'), { className: 'bar' })) : null;
+        if (bar) Object.assign(bar.style, { position: 'absolute', top: 0, left: 0, width: '100%', height: 0 });
         boxes.forEach((b, i) => {
-            const c = peek.appendChild(ctrls[i].cloneNode(true));
+            const c = bar.appendChild(ctrls[i].cloneNode(true));
             c.removeAttribute('id'); c.hidden = false; c.value = ctrls[i].value;
             Object.assign(c.style, { position: 'absolute', margin: 0, boxSizing: 'border-box', left: b.left + 'px', top: b.top + shift + 'px', width: b.width + 'px', height: b.height + 'px' });
         });
@@ -519,13 +522,16 @@ $('#sync').onclick = async e => {
 };
 // Pull down at the top of the page to reload it. Only in the home-screen app: Safari itself already has this.
 if (navigator.standalone || matchMedia('(display-mode: standalone)').matches) {
-    const ptr = document.body.appendChild(Object.assign(document.createElement('div'), { id: 'ptr', textContent: '↻' })), PULL = 80;
-    let y0 = null, dy = 0;
+    // A deliberate pull only: 140 px straight down, and a drag that turns sideways (a swipe between views) or
+    // scrolls the page is not a pull.
+    const ptr = document.body.appendChild(Object.assign(document.createElement('div'), { id: 'ptr', textContent: '↻' })), PULL = 140;
+    let y0 = null, x0 = 0, dy = 0;
     const reset = () => { y0 = null; ptr.style.transform = ''; ptr.style.opacity = '' };
-    addEventListener('touchstart', e => { dy = 0; y0 = scrollY <= 0 && !$('#pop').open && e.touches.length === 1 ? e.touches[0].clientY : null }, { passive: true });
+    addEventListener('touchstart', e => { dy = 0; x0 = e.touches[0].clientX; y0 = scrollY <= 0 && !$('#pop').open && e.touches.length === 1 ? e.touches[0].clientY : null }, { passive: true });
     addEventListener('touchmove', e => {
         if (y0 == null) return;
         dy = Math.max(0, e.touches[0].clientY - y0);
+        if (e.touches.length !== 1 || scrollY > 0 || Math.abs(e.touches[0].clientX - x0) > Math.max(dy, 10)) return reset();
         ptr.style.transform = `translateY(${Math.min(dy, PULL * 1.5) * .8}px) rotate(${dy * 3}deg)`;
         ptr.style.opacity = Math.min(dy / PULL, 1);
         ptr.classList.toggle('ready', dy >= PULL);
