@@ -422,24 +422,53 @@ function showView(v) {
     render(); scrollTo(0, 0);
 }
 document.querySelector('nav.views').onclick = e => { const b = e.target.closest('[data-view]'); if (b) showView(b.dataset.view) };
-// Swipe left for Workouts, right for Graphs. Not from charts, the map, sideways-scrolling rows or the screen edges (Safari's back and forward swipes).
+// Swipe left for Workouts, right for Graphs: the page follows the finger and slides across. Not from charts, the map,
+// sideways-scrolling rows or the screen edges (Safari's back and forward swipes).
 {
-    let sx = null, sy = 0, st = 0;
+    const app = $('#app'), still = matchMedia('(prefers-reduced-motion: reduce)');
+    let sx = null, sy = 0, dx = 0, lock = null, last = [];  // lock: null until the gesture's direction is known, then 'x' or 'y'
     const scrollsSideways = el => { for (; el && el !== document.body; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true; return false };
+    const target = d => d < 0 ? 'workouts' : 'graphs';
+    const move = (x, ms) => new Promise(done => {
+        app.style.transition = ms ? `transform ${ms}ms cubic-bezier(.2,.7,.3,1), opacity ${ms}ms` : 'none';
+        app.style.transform = x ? `translateX(${x}px)` : '';
+        app.style.opacity = x ? Math.max(.4, 1 - Math.abs(x) / innerWidth) : '';
+        if (!ms) return done();
+        let t; const end = () => { clearTimeout(t); app.removeEventListener('transitionend', end); done() };
+        app.addEventListener('transitionend', end); t = setTimeout(end, ms + 50);
+    });
     addEventListener('touchstart', e => {
         const t = e.touches[0], el = e.target;
         sx = e.touches.length === 1 && !$('#pop').open && t.clientX > 24 && t.clientX < innerWidth - 24
             && !el.closest('canvas, .leaflet-container, input, select, textarea') && !scrollsSideways(el) ? t.clientX : null;
-        sy = t.clientY; st = Date.now();
+        sy = t.clientY; dx = 0; lock = null; last = [[t.clientX, e.timeStamp]];
     }, { passive: true });
-    addEventListener('touchend', e => {
+    addEventListener('touchmove', e => {
+        if (sx == null || e.touches.length !== 1) return;
+        const t = e.touches[0], mx = t.clientX - sx, my = t.clientY - sy;
+        if (!lock) { if (Math.hypot(mx, my) < 10) return; lock = Math.abs(mx) > 1.5 * Math.abs(my) ? 'x' : 'y' }
+        if (lock !== 'x') return;
+        e.preventDefault();  // a sideways drag doesn't also scroll the page
+        dx = target(mx) === viewNow() ? mx / 4 : mx;  // drags towards no other view give way, like a rubber band
+        last = [...last, [t.clientX, e.timeStamp]].slice(-4);
+        move(dx);
+    }, { passive: false });
+    const finish = async () => {
         if (sx == null) return;
-        const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
         sx = null;
-        if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy) || Date.now() - st > 700) return;
-        const v = dx < 0 ? 'workouts' : 'graphs';
-        if (v !== viewNow()) showView(v);
-    });
+        if (lock !== 'x') return;
+        const [a, b] = [last[0], last[last.length - 1]], speed = (b[0] - a[0]) / Math.max(b[1] - a[1], 1);  // px per ms
+        const v = target(dx), go = v !== viewNow() && (Math.abs(dx) > innerWidth / 4 || (Math.abs(speed) > .4 && Math.sign(speed) === Math.sign(dx)));
+        if (!go) return move(0, 200);
+        const w = innerWidth, ms = still.matches ? 0 : 180;
+        await move(Math.sign(dx) * w, ms);
+        showView(v);
+        await move(-Math.sign(dx) * w * .35);
+        app.getBoundingClientRect();  // apply the start position before sliding in
+        await move(0, ms && 220);
+    };
+    addEventListener('touchend', finish);
+    addEventListener('touchcancel', () => { if (sx != null && lock === 'x') move(0, 200); sx = null });
 }
 $('#range').onchange = () => load().catch(e => say(e.message));
 $('#sync').onclick = async e => {

@@ -48,7 +48,8 @@ body {
     background: var(--bg);
     color: var(--ink);
     font: 16px/1.5 "Avenir Next", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-    -webkit-tap-highlight-color: transparent
+    -webkit-tap-highlight-color: transparent;
+    overflow-x: clip  /* the views slide sideways when swiped */
 }
 
 main {
