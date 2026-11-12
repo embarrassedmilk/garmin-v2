@@ -110,4 +110,4 @@ Unsorted ideas, often added from the phone. Move them into a phase when picked u
 - 2026-11-09: split the page into Graphs and Workouts views. Workouts lists every stored workout (25 at a time) instead of the selected range. No backfill needed: Garmin has no activities before 2026-10-16, and the daily sync keeps adding new ones.
 - 2026-11-11: looked into a Gear tab. Gear can't be read through the Personal API (no client method; `/gear-service/` paths return 404; no gear field on activities). Not built; re-check when the client updates.
 - 2026-11-12: built the Ideas item to swipe left and right between Graphs and Workouts (not from charts, the map, sideways-scrolling rows or the screen edges). Chart tooltips now hide on a tap outside the chart or on the same day again.
-- 2026-11-12: the swipe between Graphs and Workouts now follows the finger and slides the next view in; a short or slow drag springs back.
+- 2026-11-12: the swipe between Graphs and Workouts now follows the finger and slides the next view in like a card, with no fading; a short or slow drag springs back.
