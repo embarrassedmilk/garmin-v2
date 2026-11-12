@@ -444,10 +444,11 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         let t; const end = () => { clearTimeout(t); el.removeEventListener('transitionend', end); done() };
         el.addEventListener('transitionend', end); t = setTimeout(end, ms + 50);
     });
-    // The next view, built once per swipe, pinned to the screen from where the current view starts (or the top, if
-    // that has scrolled away) and starting just off the edge it comes in from.
+    // The next view, built once per swipe, pinned to the screen from where it will start once it takes over (or the
+    // top, if that has scrolled away), so it doesn't jump when it lands: on the phone the header is shorter on
+    // Workouts, whose Range, Export and Sync row is hidden. It starts just off the edge it comes in from.
     const openPeek = v => {
-        const r = app.getBoundingClientRect(), top = Math.max(r.top, 0);
+        markView(v); const r = app.getBoundingClientRect(), top = Math.max(r.top, 0); markView(viewNow());
         peek = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'peek' }));
         Object.assign(peek.style, { top: top + 'px', height: innerHeight - top + 'px' });
         const inner = peek.appendChild(Object.assign(document.createElement('div'), { className: 'peek-view' }));
@@ -488,11 +489,11 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         if (!go) { dx = 0; await place(200); if (peek === p) closePeek(); return }
         dx = -p.side * innerWidth; await place(ms);
         // The next view takes over the page: its content and charts move in, and the page scrolls so it stays where it is.
-        const keep = Math.min(scrollY, app.offsetTop);
+        markView(p.view); const keep = Math.min(scrollY, app.offsetTop);
         charts.forEach(c => c.destroy()); charts = p.charts; p.charts = [];
         app.replaceChildren(...p.firstChild.childNodes); slide(app, 0);
         history.replaceState(null, '', p.view === 'workouts' ? '#workouts' : location.pathname);
-        markView(p.view); closePeek(); scrollTo(0, keep);
+        closePeek(); scrollTo(0, keep);
     };
     addEventListener('touchend', finish);
     addEventListener('touchcancel', () => { if (sx != null && lock === 'x') { dx = 0; slide(app, 0, 200); if (peek) closePeek() } sx = null });
