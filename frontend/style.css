@@ -494,7 +494,8 @@ button.wcard {
     color: var(--mute)
 }
 
-#app>#workouts:first-child {
+#app>#workouts:first-child,
+.peek-view>#workouts:first-child {
     padding-top: 0  /* the view tabs above already leave room */
 }
 
@@ -948,4 +949,16 @@ section h4 {
     .map {
         height: 260px
     }
+}
+
+/* The next view sliding in over the current one during a swipe between Graphs and Workouts */
+.peek {
+    position: fixed;
+    left: 0;
+    width: 100%;
+    overflow: hidden;
+    z-index: 5;
+    background: var(--bg);
+    box-shadow: 0 0 24px rgba(0, 0, 0, .35);
+    pointer-events: none
 }

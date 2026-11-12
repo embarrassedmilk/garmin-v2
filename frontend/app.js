@@ -157,9 +157,16 @@ async function saveTags(list, refocus) {
 
 function render() {
     charts.forEach(c => c.destroy()); charts = [];
-    const app = $('#app'), view = viewNow();
+    markView(viewNow()); fill($('#app'), viewNow(), charts);
+}
+
+function markView(view) {
     document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', b.dataset.view === view));
     ['#range', '#export', '#sync'].forEach(s => { $(s).hidden = view === 'workouts' });  // graphs-only controls; the header keeps its height
+}
+
+// Builds a view into app, adding its charts to list: the page itself, or the next view sliding in during a swipe.
+function fill(app, view, list) {
     if (view === 'workouts') { app.innerHTML = `<section id="workouts">${workoutsHtml()}</section>`; return }
     if (!DAILY.length) { app.innerHTML = '<div class="empty">No data yet. Select <b>Sync now</b> to load the last 28 days from Garmin.</div>'; return }
     const L = [...DAILY].reverse(), last = k => (L.find(r => r[k] != null) || {})[k];
@@ -188,7 +195,7 @@ function render() {
     Object.assign(Chart.defaults.scales.category.ticks, { maxRotation: 0, autoSkipPadding: 12 });  // skip date labels on narrow screens instead of slanting them
     const lab = DAILY.map(r => day(r.date)), h = k => DAILY.map(r => r[k] == null ? null : r[k] / 3600);
     const base = { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, sort: (a, b) => a.datasetIndex - b.datasetIndex, filter: (i, d) => { const ds = d.datasets[i.datasetIndex]; if (ds.legendText) i.text = ds.legendText; return !ds.noLegend } } }, tooltip: { itemSort: (a, b) => a.datasetIndex - b.datasetIndex } } };
-    const mk = (id, type, datasets, scales) => charts.push(new Chart($('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
+    const mk = (id, type, datasets, scales) => list.push(new Chart(app.querySelector('#' + id), { type, data: { labels: lab, datasets }, options: { ...base, scales } }));
     const ln = (label, k, c, extra = {}) => ({ type: 'line', label, data: DAILY.map(r => r[k]), borderColor: css(c), backgroundColor: css(c), tension: .25, pointRadius: 2, spanGaps: true, order: -1, ...extra });  // order: drawn over the bars
     const bar = (label, data, c, extra = {}) => ({ type: 'bar', label, data, backgroundColor: css(c), ...extra });
     mk('c1', 'bar', [bar('Deep', h('deep_s'), '--deep', { stack: 's' }), bar('Light', h('light_s'), '--light', { stack: 's' }), bar('REM', h('rem_s'), '--rem', { stack: 's' }), bar('Awake', h('awake_s'), '--awake', { stack: 's' }), ln('Sleep score', 'sleep_score', '--ink', { yAxisID: 'y1' })],
@@ -422,23 +429,38 @@ function showView(v) {
     render(); scrollTo(0, 0);
 }
 document.querySelector('nav.views').onclick = e => { const b = e.target.closest('[data-view]'); if (b) showView(b.dataset.view) };
-// Swipe left for Workouts, right for Graphs: the page follows the finger and slides across like a card, without fading. Not from charts, the map,
-// sideways-scrolling rows or the screen edges (Safari's back and forward swipes).
+// Swipe left for Workouts, right for Graphs: the other view slides in over the current one, following the finger,
+// while the current one moves a little the same way. Not from charts, the map, sideways-scrolling rows or the screen
+// edges (Safari's back and forward swipes).
 {
     const app = $('#app'), still = matchMedia('(prefers-reduced-motion: reduce)');
-    let sx = null, sy = 0, dx = 0, lock = null, last = [];  // lock: null until the gesture's direction is known, then 'x' or 'y'
+    let sx = null, sy = 0, dx = 0, lock = null, last = [], peek = null;  // lock: null until the gesture's direction is known, then 'x' or 'y'
     const scrollsSideways = el => { for (; el && el !== document.body; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true; return false };
     const target = d => d < 0 ? 'workouts' : 'graphs';
-    const move = (x, ms) => new Promise(done => {
-        app.style.transition = ms ? `transform ${ms}ms cubic-bezier(.2,.7,.3,1)` : 'none';
-        app.style.transform = x ? `translateX(${x}px)` : '';
+    const slide = (el, x, ms) => new Promise(done => {
+        el.style.transition = ms ? `transform ${ms}ms cubic-bezier(.2,.7,.3,1)` : 'none';
+        el.style.transform = x ? `translateX(${x}px)` : '';
         if (!ms) return done();
-        let t; const end = () => { clearTimeout(t); app.removeEventListener('transitionend', end); done() };
-        app.addEventListener('transitionend', end); t = setTimeout(end, ms + 50);
+        let t; const end = () => { clearTimeout(t); el.removeEventListener('transitionend', end); done() };
+        el.addEventListener('transitionend', end); t = setTimeout(end, ms + 50);
     });
+    // The next view, built once per swipe, pinned to the screen from where the current view starts (or the top, if
+    // that has scrolled away) and starting just off the edge it comes in from.
+    const openPeek = v => {
+        const r = app.getBoundingClientRect(), top = Math.max(r.top, 0);
+        peek = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'peek' }));
+        Object.assign(peek.style, { top: top + 'px', height: innerHeight - top + 'px' });
+        const inner = peek.appendChild(Object.assign(document.createElement('div'), { className: 'peek-view' }));
+        Object.assign(inner.style, { marginLeft: r.left + 'px', width: r.width + 'px' });
+        peek.view = v; peek.side = v === 'workouts' ? 1 : -1; peek.charts = [];
+        slide(peek, peek.side * innerWidth);
+        fill(inner, v, peek.charts);
+    };
+    const closePeek = () => { peek.charts.forEach(c => c.destroy()); peek.remove(); peek = null };
+    const place = ms => Promise.all([slide(peek, peek.side * innerWidth + dx, ms), slide(app, dx * .3, ms)]);
     addEventListener('touchstart', e => {
         const t = e.touches[0], el = e.target;
-        sx = e.touches.length === 1 && !$('#pop').open && t.clientX > 24 && t.clientX < innerWidth - 24
+        sx = e.touches.length === 1 && !$('#pop').open && !peek && t.clientX > 24 && t.clientX < innerWidth - 24
             && !el.closest('canvas, .leaflet-container, input, select, textarea') && !scrollsSideways(el) ? t.clientX : null;
         sy = t.clientY; dx = 0; lock = null; last = [[t.clientX, e.timeStamp]];
     }, { passive: true });
@@ -448,26 +470,32 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         if (!lock) { if (Math.hypot(mx, my) < 10) return; lock = Math.abs(mx) > 1.5 * Math.abs(my) ? 'x' : 'y' }
         if (lock !== 'x') return;
         e.preventDefault();  // a sideways drag doesn't also scroll the page
-        dx = target(mx) === viewNow() ? mx / 4 : mx;  // drags towards no other view give way, like a rubber band
         last = [...last, [t.clientX, e.timeStamp]].slice(-4);
-        move(dx);
+        const v = target(mx);
+        if (v === viewNow()) { if (peek) closePeek(); dx = mx / 4; slide(app, dx); return }  // no view that way: give a little, like a rubber band
+        if (!peek) openPeek(v);
+        dx = peek.side > 0 ? Math.max(mx, -innerWidth) : Math.min(mx, innerWidth);
+        place();
     }, { passive: false });
     const finish = async () => {
         if (sx == null) return;
         sx = null;
         if (lock !== 'x') return;
+        if (!peek) return slide(app, 0, 200);
         const [a, b] = [last[0], last[last.length - 1]], speed = (b[0] - a[0]) / Math.max(b[1] - a[1], 1);  // px per ms
-        const v = target(dx), go = v !== viewNow() && (Math.abs(dx) > innerWidth / 4 || (Math.abs(speed) > .4 && Math.sign(speed) === Math.sign(dx)));
-        if (!go) return move(0, 200);
-        const w = innerWidth, ms = still.matches ? 0 : 180;
-        await move(Math.sign(dx) * w, ms);
-        showView(v);
-        await move(-Math.sign(dx) * w);  // the next view comes in from the other edge, like the next card
-        app.getBoundingClientRect();  // apply the start position before sliding in
-        await move(0, ms && 260);
+        const go = Math.abs(dx) > innerWidth / 4 || (Math.abs(speed) > .4 && Math.sign(speed) === -peek.side);
+        const p = peek, ms = still.matches ? 0 : 260;
+        if (!go) { dx = 0; await place(200); if (peek === p) closePeek(); return }
+        dx = -p.side * innerWidth; await place(ms);
+        // The next view takes over the page: its content and charts move in, and the page scrolls so it stays where it is.
+        const keep = Math.min(scrollY, app.offsetTop);
+        charts.forEach(c => c.destroy()); charts = p.charts; p.charts = [];
+        app.replaceChildren(...p.firstChild.childNodes); slide(app, 0);
+        history.replaceState(null, '', p.view === 'workouts' ? '#workouts' : location.pathname);
+        markView(p.view); closePeek(); scrollTo(0, keep);
     };
     addEventListener('touchend', finish);
-    addEventListener('touchcancel', () => { if (sx != null && lock === 'x') move(0, 200); sx = null });
+    addEventListener('touchcancel', () => { if (sx != null && lock === 'x') { dx = 0; slide(app, 0, 200); if (peek) closePeek() } sx = null });
 }
 $('#range').onchange = () => load().catch(e => say(e.message));
 $('#sync').onclick = async e => {
