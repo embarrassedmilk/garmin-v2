@@ -94,6 +94,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 Unsorted ideas, often added from the phone. Move them into a phase when picked up.
 - Check if sleep restlessness can be adjusted.
 - Tab with the gear information. On hold: the Personal API has no gear data (checked 2026-11-11, see log).
+- Swipe left and right to switch between the Graphs and Workouts tabs.
 
 ## Notes / log
 - 2026-10-31: first explore run; all 15 endpoints worked. Chose Garmin's official client over third-party `gcpapi-sync`.
