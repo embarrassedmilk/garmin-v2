@@ -10,6 +10,25 @@ const STALE_MS = 36 * 3600 * 1000, WORKOUT_PAGE = 25;
 const PRESET_TAGS = ['alcohol', 'late meal', 'late caffeine', 'illness', 'travel'];
 const todayIso = () => new Date().toLocaleDateString('en-CA');  // YYYY-MM-DD, local
 let charts = [], popCharts = [], popMap = null, DAILY = [], ACTS = [], TAGS = { days: {}, known: [] }, workoutTab = 'all', workoutsShown = WORKOUT_PAGE, tagDay = todayIso();
+
+// On touch screens a chart's tooltip stays up after a tap and can cover the chart: a tap anywhere else, or on the same day again, hides it
+let tipTap = null;
+const hideChartTip = c => { c.tooltip.setActiveElements([], { x: 0, y: 0 }); c.setActiveElements([]) };
+document.addEventListener('pointerdown', e => {
+  tipTap = null;
+  for (const c of Object.values(Chart.instances)) {
+    const act = c.tooltip?.getActiveElements() || [];
+    if (!act.length) continue;
+    if (e.target === c.canvas) tipTap = { c, i: act[0].index };
+    else { hideChartTip(c); c.update('none') }
+  }
+}, true);
+Chart.register({ id: 'tapToHideTip', afterEvent(c, args) {
+  if (args.event.type !== 'click' || tipTap?.c !== c) return;
+  const act = c.tooltip.getActiveElements();
+  if (act.length && act[0].index === tipTap.i) { hideChartTip(c); args.changed = true }
+  tipTap = null;
+} });
 const viewNow = () => location.hash === '#workouts' ? 'workouts' : 'graphs';  // in the URL, so a reload keeps the view
 
 async function api(p, o) { const r = await fetch(p, o); if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m } catch { } throw new Error(m) } return r.json() }
