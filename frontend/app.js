@@ -444,21 +444,34 @@ document.querySelector('nav.views').onclick = e => { const b = e.target.closest(
         let t; const end = () => { clearTimeout(t); el.removeEventListener('transitionend', end); done() };
         el.addEventListener('transitionend', end); t = setTimeout(end, ms + 50);
     });
-    // The next view, built once per swipe, pinned to the screen from where it will start once it takes over (or the
-    // top, if that has scrolled away), so it doesn't jump when it lands: on the phone the header is shorter on
-    // Workouts, whose Range, Export and Sync row is hidden. It starts just off the edge it comes in from.
+    // The Range, Export and Sync controls belong to Graphs. On the phone they have a row of their own, which Workouts
+    // doesn't have, so they move with the Graphs view as if part of it.
+    const ctrls = ['#range', '#export', '#sync'].map(s => $(s));
+    // The next view, built once per swipe and pinned to the screen. It covers everything from the higher of the two
+    // views' tops (or the top of the screen, if that has scrolled away) and puts its content, plus a copy of the
+    // controls for Graphs, exactly where it will be once it takes over, so nothing jumps when it lands. It starts
+    // just off the edge it comes in from.
     const openPeek = v => {
-        markView(v); const r = app.getBoundingClientRect(), top = Math.max(r.top, 0); markView(viewNow());
+        const cur = viewNow(), tops = [app.getBoundingClientRect().top, ...(cur === 'graphs' ? ctrls.map(c => c.getBoundingClientRect().top) : [])];
+        markView(v);
+        const r = app.getBoundingClientRect(), boxes = v === 'graphs' ? ctrls.map(c => c.getBoundingClientRect()) : [];
+        markView(cur);
+        const end = Math.max(r.top, 0), top = Math.max(Math.min(...tops, end, ...boxes.map(b => b.top + end - r.top)), 0), shift = end - r.top - top;
         peek = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'peek' }));
         Object.assign(peek.style, { top: top + 'px', height: innerHeight - top + 'px' });
         const inner = peek.appendChild(Object.assign(document.createElement('div'), { className: 'peek-view' }));
-        Object.assign(inner.style, { marginLeft: r.left + 'px', width: r.width + 'px' });
+        Object.assign(inner.style, { marginLeft: r.left + 'px', width: r.width + 'px', marginTop: end - top + 'px' });
+        boxes.forEach((b, i) => {
+            const c = peek.appendChild(ctrls[i].cloneNode(true));
+            c.removeAttribute('id'); c.hidden = false; c.value = ctrls[i].value;
+            Object.assign(c.style, { position: 'absolute', margin: 0, boxSizing: 'border-box', left: b.left + 'px', top: b.top + shift + 'px', width: b.width + 'px', height: b.height + 'px' });
+        });
         peek.view = v; peek.side = v === 'workouts' ? 1 : -1; peek.charts = [];
         slide(peek, peek.side * innerWidth);
         fill(inner, v, peek.charts);
     };
-    const closePeek = () => { peek.charts.forEach(c => c.destroy()); peek.remove(); peek = null };
-    const place = ms => Promise.all([slide(peek, peek.side * innerWidth + dx, ms), slide(app, dx * .3, ms)]);
+    const closePeek = () => { peek.charts.forEach(c => c.destroy()); peek.remove(); peek = null; ctrls.forEach(c => slide(c, 0)) };
+    const place = ms => Promise.all([slide(peek, peek.side * innerWidth + dx, ms), slide(app, dx * .3, ms), ...ctrls.map(c => slide(c, dx * .3, ms))]);
     addEventListener('touchstart', e => {
         const t = e.touches[0], el = e.target;
         sx = e.touches.length === 1 && !$('#pop').open && !peek && t.clientX > 24 && t.clientX < innerWidth - 24
