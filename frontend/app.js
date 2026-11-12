@@ -417,11 +417,30 @@ $('#export').onclick = async () => {
         else if (err.name !== 'AbortError') say('Export failed: ' + err.message);
     }
 };
-document.querySelector('nav.views').onclick = e => {
-    const b = e.target.closest('[data-view]');
-    if (b && b.dataset.view !== viewNow()) history.replaceState(null, '', b.dataset.view === 'workouts' ? '#workouts' : location.pathname);
-    if (b) { render(); scrollTo(0, 0) }
-};
+function showView(v) {
+    if (v !== viewNow()) history.replaceState(null, '', v === 'workouts' ? '#workouts' : location.pathname);
+    render(); scrollTo(0, 0);
+}
+document.querySelector('nav.views').onclick = e => { const b = e.target.closest('[data-view]'); if (b) showView(b.dataset.view) };
+// Swipe left for Workouts, right for Graphs. Not from charts, the map, sideways-scrolling rows or the screen edges (Safari's back and forward swipes).
+{
+    let sx = null, sy = 0, st = 0;
+    const scrollsSideways = el => { for (; el && el !== document.body; el = el.parentElement) if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return true; return false };
+    addEventListener('touchstart', e => {
+        const t = e.touches[0], el = e.target;
+        sx = e.touches.length === 1 && !$('#pop').open && t.clientX > 24 && t.clientX < innerWidth - 24
+            && !el.closest('canvas, .leaflet-container, input, select, textarea') && !scrollsSideways(el) ? t.clientX : null;
+        sy = t.clientY; st = Date.now();
+    }, { passive: true });
+    addEventListener('touchend', e => {
+        if (sx == null) return;
+        const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+        sx = null;
+        if (Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy) || Date.now() - st > 700) return;
+        const v = dx < 0 ? 'workouts' : 'graphs';
+        if (v !== viewNow()) showView(v);
+    });
+}
 $('#range').onchange = () => load().catch(e => say(e.message));
 $('#sync').onclick = async e => {
     const b = e.target; b.disabled = true; b.textContent = 'Syncing…'; say('');
