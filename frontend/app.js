@@ -409,8 +409,10 @@ $('#app').onclick = e => {
     if (sleep) openSleep(sleep.dataset.sleep).catch(err => say(err.message));
     if (e.target.id === 'tag-day') try { e.target.showPicker() } catch { }  // open the calendar on any click, not just the icon
     const mine = TAGS.days[tagDay] || [], add = e.target.closest('[data-addtag]'), drop = e.target.closest('[data-untag]'), td = e.target.closest('[data-tagday]');
-    if (add) saveTags([...mine, add.dataset.addtag], '#tag-new').catch(err => say(err.message));
-    if (drop) saveTags(mine.filter(t => t !== drop.dataset.untag), '#tag-new').catch(err => say(err.message));
+    // Back to the New tag box for the next one, but not on touch screens, where focusing it pops up the keyboard and the suggestion list.
+    const back = matchMedia('(pointer:coarse)').matches ? null : '#tag-new';
+    if (add) saveTags([...mine, add.dataset.addtag], back).catch(err => say(err.message));
+    if (drop) saveTags(mine.filter(t => t !== drop.dataset.untag), back).catch(err => say(err.message));
     if (td) { tagDay = $('#tag-day').value = td.dataset.tagday; $('#tag-body').innerHTML = tagBodyHtml(); $('#tag-day').focus() }
 };
 $('#app').onchange = e => {
