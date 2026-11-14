@@ -1,9 +1,9 @@
 """Compact, identifier-free summary of the stored data, for attaching to an AI chat."""
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from statistics import mean
 
-from . import db
+from . import db, samples
 
 CAVEATS = [
     "Single user, wrist-worn Garmin watch. Values are Garmin's estimates, not clinical measurements.",
@@ -50,6 +50,23 @@ CAVEATS = [
     "unreliable on hilly routes, and on intervals, progression runs or runs without a warm-up, where a change in "
     "effort looks like drift. hr_drift_basis gap uses grade-adjusted pace; pace_not_grade_adjusted means hills "
     "may distort it further.",
+    "hr_source says which sensor measured HR on a run: wrist (the watch's optical sensor), chest_strap or "
+    "external (another paired HR sensor). Without hr_source, assume wrist.",
+    "samples on recent runs are 10-second averages of the watch's records (about one per second), columnar: index i "
+    "of every list belongs to t_s[i], seconds of elapsed time since the start. null means no record in that "
+    "bucket (e.g. the timer was paused) or no value, such as pace or cadence while standing. HR is from the wrist "
+    "sensor unless hr_source says otherwise, and averaging smooths short peaks. Elevation is the barometric "
+    "altitude, not corrected. Only runs from the last samples_days days have samples, to keep the file small.",
+    "hr_anomalies are segments flagged by simple rules on the 10-second samples, heuristics, not diagnoses. spike: "
+    "HR rose by 12 bpm or more within 30 s while pace changed by under 5% and the climb was under 3 m; it is also "
+    "flagged when HR rises normally at the start of a run or after a pause, so check for t_s near 0 or nulls just "
+    "before it. "
+    "cadence_lock_suspect: for 30 s or more HR was within 3 bpm of cadence and 10 bpm or more above the median "
+    "of the previous 2 minutes. Cadence lock is a known optical-sensor artifact where the sensor reads the step "
+    "rate as HR. An empty list means no segment matched the rules, not that the HR was accurate. "
+    "A gradual or post-pause step up in HR is not flagged by either rule.",
+    "cadence_spm in samples is steps per minute (the file stores strides per minute for one foot, doubled here), "
+    "the same unit as avg_cadence_spm.",
 ]
 OVERNIGHT_KEYS = {"hrv_last_night_ms", "sleep_score", "sleep_hours", "deep_min", "rem_min", "sleep_avg_hr"}
 DRIFT_MIN_S = 40 * 60
@@ -154,6 +171,7 @@ def run_fields(a: dict) -> dict:
         "hr_zone_minutes": None if all(z is None for z in zones) else
         {f"z{n}": round((z or 0) / 60, 1) for n, z in enumerate(zones, 1)},
         "hr_zone_bounds_bpm": details.get("hr_zone_bounds_bpm"),
+        "hr_source": details.get("hr_source"),
         "recovery_hours_at_finish": _r(details.get("recovery_min") and details["recovery_min"] / 60, 1),
         "hr_drift_pct": drift,
         "hr_drift_basis": basis,
@@ -174,16 +192,28 @@ def _run_stats(runs: list) -> dict:
     }
 
 
-def build_export(days: int = 28) -> dict:
+def _sample_fields(series, recent: bool) -> dict:
+    """hr_anomalies for every run with stored samples; the samples themselves only for recent runs."""
+    if not series:
+        return {}
+    rs = samples.resample(json.loads(series))
+    return {**({"samples": samples.export_samples(rs)} if recent else {}), "hr_anomalies": samples.hr_anomalies(rs)}
+
+
+def build_export(days: int = 28, sample_days: int = samples.SAMPLE_DAYS) -> dict:
     c = db.connect()
     rows = [dict(r) for r in reversed(c.execute("SELECT * FROM daily ORDER BY date DESC LIMIT ?", (days,)).fetchall())]
     first = rows[0]["date"] if rows else "9999-12-31"
     acts = [dict(r) for r in c.execute(
         "SELECT * FROM activities WHERE substr(start_local,1,10) >= ? ORDER BY start_local", (first,)).fetchall()]
     tags = db.all_tags(c)["days"]
+    series = {r["id"]: r["series"] for r in c.execute(
+        "SELECT id, series FROM run_samples WHERE id IN (SELECT id FROM activities WHERE substr(start_local,1,10) >= ?)",
+        (first,))}
     c.close()
 
     today = date.today().isoformat()
+    samples_from = (date.today() - timedelta(days=sample_days - 1)).isoformat()
     daily = [{
         "date": r["date"], "partial": _is_partial(r, today),
         "steps": r["steps"], "step_goal": r["step_goal"], "distance_km": _r(r["distance_m"] and r["distance_m"] / 1000, 1),
@@ -206,6 +236,7 @@ def build_export(days: int = 28) -> dict:
         "distance_km": _r(a["distance_m"] and a["distance_m"] / 1000, 1), "avg_hr": a["avg_hr"], "max_hr": a["max_hr"],
         "aerobic_te": _r(a["te_aerobic"]), "anaerobic_te": _r(a["te_anaerobic"]), "training_load": _r(a["training_load"], 0),
         **(run_fields(a) if a["type"] in db.RUN_SUBTYPES else {}),
+        **(_sample_fields(series.get(a["id"]), a["start_local"][:10] >= samples_from) if a["type"] in db.RUN_SUBTYPES else {}),
     } for a in acts]  # names omitted on purpose: they can contain place names
 
     done = [d for d in daily if not d["partial"]]
@@ -242,6 +273,7 @@ def build_export(days: int = 28) -> dict:
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "range": {"from": daily[0]["date"] if daily else None, "to": daily[-1]["date"] if daily else None, "days": len(daily)},
         **({"tags_logged_since": min(tags)} if tags else {}),
+        "samples_days": sample_days,
         "caveats": CAVEATS,
         "stats": stats,
         "daily": daily,

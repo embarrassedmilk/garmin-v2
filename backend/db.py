@@ -28,6 +28,9 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS body_battery (date TEXT PRIMARY KEY NOT NULL, curve TEXT);"  # JSON, kept out of daily to keep /api/daily small
     # JSON [[lat, lon], ...], "[]" if the file has no GPS. Its own table so location can't leak through SELECT * on activities.
     "CREATE TABLE IF NOT EXISTS run_routes (id INTEGER PRIMARY KEY, points TEXT);"
+    # JSON columns {"t": seconds since the first record, "hr", "cad" (steps/min), "speed" (m/s), "alt" (m)},
+    # one entry per file record (about 1 s), no position. Resampled for the export by backend/samples.py.
+    "CREATE TABLE IF NOT EXISTS run_samples (id INTEGER PRIMARY KEY, series TEXT);"
     # Logged by hand on the dashboard: Garmin's API doesn't expose the app's Lifestyle Logging.
     # JSON [[minutes after local midnight of the wake-up day (negative before midnight), ms], ...], "[]" if none.
     "CREATE TABLE IF NOT EXISTS hrv_readings (date TEXT PRIMARY KEY NOT NULL, readings TEXT);"

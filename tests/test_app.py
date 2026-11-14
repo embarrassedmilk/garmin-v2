@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from backend import db, sync
+from backend import db, samples, sync
 from backend.export import build_export
 from backend.main import app
 
@@ -747,3 +747,121 @@ class MigrationTest(TempDbCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def steady(n, hr=140, cad=170, speed=2.8, alt=10.0):
+    """n one-second records of a steady run, as stored in run_samples."""
+    return {"t": list(range(n)), "hr": [hr] * n, "cad": [cad] * n, "speed": [speed] * n, "alt": [alt] * n}
+
+
+class RunSamplesTest(TempDbCase):
+    def test_records_become_relative_seconds_and_steps_per_minute(self):
+        recs = [{"timestamp": 1000, "heart_rate": 140, "cadence": 85, "fractional_cadence": 0.5, "enhanced_speed": 2.8,
+                 "enhanced_altitude": 12.34, "position_lat": 1, "position_long": 2},
+                {"timestamp": 1003, "heart_rate": None, "cadence": 0, "enhanced_speed": 0.0}]
+        self.assertEqual(sync.parse_samples({"record_mesgs": recs}),
+                         {"t": [0, 3], "hr": [140, None], "cad": [171.0, None], "speed": [2.8, 0.0], "alt": [12.3, None]})
+
+    def test_hr_source(self):
+        whr = {"local_device_type": "whr", "source_type": "local"}
+        strap = {"source_type": "antplus", "antplus_device_type": "heart_rate", "garmin_product": "hrm_pro"}
+        other = {"source_type": "bluetooth_low_energy", "device_type": 120}
+        cases = [([whr], "wrist"), ([whr, strap], "chest_strap"), ([whr, other], "external"), ([], None)]
+        for devices, expected in cases:
+            self.assertEqual(sync.parse_hr_source({"device_info_mesgs": devices}), expected)
+
+    def test_pauses_stay_null_and_aligned(self):
+        s = steady(40)
+        for k in s:  # pause from 10 s to 29 s
+            s[k] = s[k][:10] + s[k][30:]
+        rs = samples.resample(s)
+        self.assertEqual(rs["t_s"], [0, 10, 20, 30])
+        self.assertEqual(rs["hr"], [140, None, None, 140])
+        out = samples.export_samples(rs)
+        self.assertEqual(out["pace_min_per_km"], [5.95, None, None, 5.95])
+        self.assertEqual({k: len(v) for k, v in out.items() if k != "interval_s"}, dict.fromkeys(out.keys() - {"interval_s"}, 4))
+
+    def test_standing_still_has_no_pace(self):
+        self.assertEqual(samples.resample(steady(10, speed=0.1))["pace_min_per_km"], [None])
+
+    def test_spike_at_steady_pace_on_the_flat(self):
+        s = steady(300)
+        s["hr"] = [140] * 150 + [155] * 150
+        found = samples.hr_anomalies(samples.resample(s))
+        self.assertEqual([(a["type"], a["peak_hr"]) for a in found], [("spike", 155)])
+        self.assertLessEqual(found[0]["start_s"], 150)
+        self.assertGreater(found[0]["end_s"], 150)
+
+    def test_no_spike_when_speeding_up_or_climbing(self):
+        faster = steady(300)
+        faster["hr"] = [140] * 150 + [155] * 150
+        faster["speed"] = [2.8] * 150 + [3.2] * 150
+        climb = steady(300)
+        climb["hr"] = faster["hr"]
+        climb["alt"] = [10.0] * 150 + [20.0] * 150
+        slow_rise = steady(300)
+        slow_rise["hr"] = [140 + i // 25 for i in range(300)]  # 12 bpm over 5 minutes
+        for s in (faster, climb, slow_rise):
+            self.assertEqual(samples.hr_anomalies(samples.resample(s)), [])
+
+    def test_cadence_lock(self):
+        s = steady(400)
+        s["hr"] = [150] * 200 + [169] * 60 + [150] * 140
+        s["cad"] = [168] * 400
+        locks = [a for a in samples.hr_anomalies(samples.resample(s)) if a["type"] == "cadence_lock_suspect"]
+        self.assertEqual(locks, [{"start_s": 200, "end_s": 260, "peak_hr": 169, "type": "cadence_lock_suspect"}])
+
+    def test_short_or_baseline_level_lock_is_not_flagged(self):
+        short = steady(400, cad=168)
+        short["hr"] = [150] * 200 + [169] * 20 + [150] * 180
+        high_all_along = steady(400, hr=168, cad=168)
+        for s in (short, high_all_along):
+            self.assertFalse([a for a in samples.hr_anomalies(samples.resample(s)) if a["type"] == "cadence_lock_suspect"])
+
+    def test_overlapping_segments_are_merged(self):
+        segs = [{"start_s": 0, "end_s": 30, "peak_hr": 150, "type": "spike"},
+                {"start_s": 20, "end_s": 50, "peak_hr": 160, "type": "spike"},
+                {"start_s": 40, "end_s": 80, "peak_hr": 165, "type": "cadence_lock_suspect"}]
+        self.assertEqual(samples._merge(segs), [{"start_s": 0, "end_s": 50, "peak_hr": 160, "type": "spike"},
+                                                {"start_s": 40, "end_s": 80, "peak_hr": 165, "type": "cadence_lock_suspect"}])
+
+    def test_export_has_samples_only_for_recent_runs(self):
+        old = (TODAY - timedelta(days=20)).isoformat()
+        c = db.connect()
+        for id, day in ((1, YESTERDAY), (2, old), (3, YESTERDAY)):
+            db.upsert(c, "daily", "date", {"date": day, "steps": 1, "summary_fetched_on": TODAY.isoformat()})
+            db.upsert(c, "activities", "id", {"id": id, "start_local": f"{day} 0{id}:00:00", "type": "running",
+                                              "run_details": json.dumps({"laps": [], "hr_source": "wrist"})})
+        for id in (1, 2):
+            db.upsert(c, "run_samples", "id", {"id": id, "series": json.dumps(steady(25))})
+        c.commit()
+        c.close()
+        export = build_export(28)
+        runs = {w["date"] + str(i): w for i, w in enumerate(export["workouts"])}
+        old_run, recent, unsampled = (runs[k] for k in sorted(runs))
+        self.assertEqual(export["samples_days"], 14)
+        self.assertEqual(recent["samples"], {"interval_s": 10, "t_s": [0, 10, 20], "hr": [140] * 3, "cadence_spm": [170] * 3,
+                                             "pace_min_per_km": [5.95] * 3, "elev_m": [10] * 3})
+        self.assertEqual(recent["hr_anomalies"], [])
+        self.assertEqual(recent["hr_source"], "wrist")
+        self.assertNotIn("samples", old_run)
+        self.assertEqual(old_run["hr_anomalies"], [])
+        self.assertFalse({"samples", "hr_anomalies"} & unsampled.keys())
+        self.assertNotIn("samples", build_export(28, sample_days=0)["workouts"][1])
+
+    def test_sync_stores_samples_and_backfills_runs_synced_before(self):
+        c = db.connect()
+        db.upsert(c, "activities", "id", {"id": 1, "start_local": f"{YESTERDAY} 07:00:00", "type": "running",
+                                          "run_details": json.dumps({"laps": [], "recovery_min": 60})})
+        db.upsert(c, "run_routes", "id", {"id": 1, "points": "[]"})
+        c.commit()
+        c.close()
+        client = MagicMock()
+        client.search_activities.return_value = []
+        records = [{"timestamp": 5, "heart_rate": 130, "position_lat": 1, "position_long": 1}]
+        with patch.dict(FIT_MESSAGES, {"record_mesgs": records}):
+            self.assertEqual(RunDetailsSyncTest.sync_once(self, client)["counts"]["run_details"], 1)
+            self.assertEqual(RunDetailsSyncTest.sync_once(self, client)["counts"]["run_details"], 0)
+        c = db.connect()
+        series = json.loads(c.execute("SELECT series FROM run_samples WHERE id = 1").fetchone()["series"])
+        self.assertEqual(series, {"t": [0], "hr": [130], "cad": [None], "speed": [None], "alt": [None]})

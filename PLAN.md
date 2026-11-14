@@ -71,6 +71,7 @@ Automate only once there are 6 to 8 weeks of data (around 2026-11-26 to 2026-12-
 - [x] Export: detailed running fields (elevation, GAP, splits, HR zones, form, drift), `stats.runs`, `readiness` (VO2 max), new caveats
 - [x] Activity file message 140 field 9 is recovery minutes (matched the watch on 2026-11-08); exported as `recovery_hours_at_finish`
 - [x] Export: `hrv_status`, `hrv_5min_high_ms`, `hrv_baseline_low_ms`, `hrv_baseline_high_ms` on daily entries (5-minute readings not exported)
+- [x] Export: per-run `hr_source`, `hr_anomalies` (spike, cadence lock), and 10 s `samples` for runs in the last 14 days (`run_samples` table, `backend/samples.py`)
 - [ ] `backend/insights.py`: code computes stats, model writes narrative; provider switch `gemini` | `anthropic`, same prompt
 - [ ] Prompt rules: state confidence and sample size, flag thin data, no causal claims, no medical advice
 - [ ] Cache result; "regenerate" button; insights panel in the UI
@@ -111,3 +112,4 @@ Unsorted ideas, often added from the phone. Move them into a phase when picked u
 - 2026-11-11: looked into a Gear tab. Gear can't be read through the Personal API (no client method; `/gear-service/` paths return 404; no gear field on activities). Not built; re-check when the client updates.
 - 2026-11-12: built the Ideas item to swipe left and right between Graphs and Workouts (not from charts, the map, sideways-scrolling rows or the screen edges). Chart tooltips now hide on a tap outside the chart or on the same day again.
 - 2026-11-12: the swipe between Graphs and Workouts now slides the other view in over the current one as the finger moves (the current one shifts a little the same way); a short or slow drag springs back.
+- 2026-11-14: added run time series to the export to check HR spikes and sensor glitches. Each run's records (HR, cadence, speed, altitude, about one per second, no position) are stored in `run_samples` at sync; the export resamples them to 10 s for runs in the last 14 days and flags spikes and cadence lock on every run. All runs so far are wrist HR. 14-day export went from 26,521 to 84,350 bytes. On 2026-11-14, the two HR peaks near 170 (10.7 and 11.4 km) are flagged as cadence lock; the 2026-10-18 jump (a 22 s pause at 7.37 km, then a manual lap at 7.44 km) is a step up across a pause and a gradual climb, which neither rule flags.

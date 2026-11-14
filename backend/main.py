@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from . import db
 from .export import build_export, run_fields
+from .samples import SAMPLE_DAYS
 from .sync import run_sync
 
 app = FastAPI(title="Garmin dashboard")
@@ -107,10 +108,10 @@ def sync(days: int = 28):
 
 
 @app.get("/api/export")
-def export(days: int = 28):
+def export(days: int = 28, sample_days: int = SAMPLE_DAYS):
     """Download a compact, identifier-free JSON summary to attach to an AI chat."""
     name = f"garmin-export-{date.today().isoformat()}.json"
-    return JSONResponse(build_export(days), headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return JSONResponse(build_export(days, sample_days), headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 class Frontend(StaticFiles):

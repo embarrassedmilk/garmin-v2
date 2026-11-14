@@ -222,7 +222,36 @@ def parse_run_details(messages: dict) -> dict:
         })
     zones = next((z for z in messages.get("time_in_zone_mesgs", []) if z.get("reference_mesg") == "session"), {})
     return {"laps": laps, "hr_zone_bounds_bpm": zones.get("hr_zone_high_boundary"), "vo2max": parse_vo2max(messages),
-            "recovery_min": parse_recovery_min(messages)}
+            "recovery_min": parse_recovery_min(messages), "hr_source": parse_hr_source(messages)}
+
+
+def parse_hr_source(messages: dict):
+    """wrist, chest_strap or external, from the sensors the file lists. A paired HR sensor wins over the
+    watch's own optical sensor (whr), which is listed even when a strap is used. None if neither is listed."""
+    devices = messages.get("device_info_mesgs", [])
+    for d in devices:
+        paired = d.get("source_type") in ("antplus", "bluetooth_low_energy", "bluetooth")
+        if "heart_rate" in (d.get("antplus_device_type"), d.get("ble_device_type")) or (paired and d.get("device_type") == 120):
+            return "chest_strap" if str(d.get("garmin_product") or "").startswith("hrm") else "external"
+    return "wrist" if any(d.get("local_device_type") == "whr" for d in devices) else None
+
+
+def parse_samples(messages: dict) -> dict:
+    """Per-record series for HR checks: seconds since the first record, HR, cadence (steps/min), speed, altitude.
+    No position. Cadence 0 (standing) and missing values are None."""
+    recs = [r for r in messages.get("record_mesgs", []) if r.get("timestamp") is not None]
+    t0 = recs[0]["timestamp"] if recs else 0
+    out = {"t": [], "hr": [], "cad": [], "speed": [], "alt": []}
+    for r in recs:
+        cad = r.get("cadence")  # strides per minute (one foot), like the laps
+        speed = r.get("enhanced_speed", r.get("speed"))
+        alt = r.get("enhanced_altitude", r.get("altitude"))
+        out["t"].append(r["timestamp"] - t0)
+        out["hr"].append(r.get("heart_rate"))
+        out["cad"].append(round((cad + (r.get("fractional_cadence") or 0)) * 2, 1) if cad else None)
+        out["speed"].append(None if speed is None else round(speed, 3))
+        out["alt"].append(None if alt is None else round(alt, 1))
+    return out
 
 
 def parse_route(messages: dict) -> list:
@@ -315,12 +344,12 @@ def run_sync(days: int = 28) -> dict:
         pull("activities", activities, parse_activity, "activities", "id")
 
         # One download per run, once: a run's laps and route don't change after upload.
-        # Runs synced before routes or recovery time were stored get one more download.
+        # Runs synced before routes, recovery time or samples were stored get one more download.
         run_types = list(db.RUN_SUBTYPES)
         pending = c.execute(
             f"SELECT id, start_local FROM activities "
             f"WHERE (run_details IS NULL OR (run_details != '{{}}' AND (id NOT IN (SELECT id FROM run_routes) "
-            f"OR json_type(run_details, '$.recovery_min') IS NULL))) "
+            f"OR id NOT IN (SELECT id FROM run_samples) OR json_type(run_details, '$.recovery_min') IS NULL))) "
             f"AND substr(start_local,1,10) >= ? "
             f"AND type IN ({', '.join('?' * len(run_types))})", [start.isoformat(), *run_types]).fetchall()
         counts["run_details"] = 0
@@ -329,6 +358,7 @@ def run_sync(days: int = 28) -> dict:
                 messages = read_fit(client.download_activity(run["id"]))
                 db.upsert(c, "activities", "id", {"id": run["id"], "run_details": json.dumps(parse_run_details(messages))})
                 db.upsert(c, "run_routes", "id", {"id": run["id"], "points": json.dumps(parse_route(messages))})
+                db.upsert(c, "run_samples", "id", {"id": run["id"], "series": json.dumps(parse_samples(messages), separators=(",", ":"))})
                 counts["run_details"] += 1
             except Exception as ex:
                 errors.append(f"run_details {run['start_local'][:10]}: {type(ex).__name__}: {str(ex)[:200]}")
