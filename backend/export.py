@@ -58,13 +58,19 @@ CAVEATS = [
     "sensor unless hr_source says otherwise, and averaging smooths short peaks. Elevation is the barometric "
     "altitude, not corrected. Only runs from the last samples_days days have samples, to keep the file small.",
     "hr_anomalies are segments flagged by simple rules on the 10-second samples, heuristics, not diagnoses. spike: "
-    "HR rose by 12 bpm or more within 30 s while pace changed by under 5% and the climb was under 3 m; it is also "
-    "flagged when HR rises normally at the start of a run or after a pause, so check for t_s near 0 or nulls just "
-    "before it. "
+    "HR rose by 12 bpm or more within 30 s while pace changed by under 5% and the climb was under 3 m. Spikes are "
+    "not flagged in the first 120 s of a run or within 90 s after a gap (null HR buckets: the timer was paused or "
+    "there was no record), where HR normally rises. A stop with the timer still running (very slow or null pace "
+    "but HR present) is not a gap, so a spike right after one can still be a normal rise. "
     "cadence_lock_suspect: for 30 s or more HR was within 3 bpm of cadence and 10 bpm or more above the median "
     "of the previous 2 minutes. Cadence lock is a known optical-sensor artifact where the sensor reads the step "
-    "rate as HR. An empty list means no segment matched the rules, not that the HR was accurate. "
-    "A gradual or post-pause step up in HR is not flagged by either rule.",
+    "rate as HR. sudden_drop: HR fell by 12 bpm or more within 20 s, with no gap, while pace changed by under 5%; "
+    "peak_hr is HR just before the drop and low_hr just after. Real HR does not fall that fast at a steady running "
+    "pace, so this is the strongest sign of an optical-sensor artifact, e.g. the end of a cadence lock. "
+    "episode: a spike or cadence_lock_suspect followed by a sudden_drop within 5 minutes with no gap in between "
+    "share the same episode number, meaning they likely belong to one artifact: the HR between the rise and the "
+    "drop is probably wrong. Segments without episode were not linked. An empty list means no segment matched "
+    "the rules, not that the HR was accurate. A gradual or post-pause step up in HR is not flagged.",
     "cadence_spm in samples is steps per minute (the file stores strides per minute for one foot, doubled here), "
     "the same unit as avg_cadence_spm.",
 ]

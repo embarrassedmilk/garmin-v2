@@ -9,6 +9,14 @@ SPIKE_RISE_BPM = 12  # spike: HR rises at least this much...
 SPIKE_WINDOW_S = 30  # ...within this many seconds...
 SPIKE_MAX_PACE_CHANGE = 0.05  # ...while pace changes by less than this fraction...
 SPIKE_MAX_GAIN_M = 3  # ...and the climb over that window is less than this
+SPIKE_IGNORE_START_S = 120  # no spike flags starting this early in the run (HR is still rising from rest)...
+SPIKE_IGNORE_AFTER_GAP_S = 90  # ...or this soon after a gap (null HR buckets: a pause or no record)
+
+DROP_FALL_BPM = 12  # sudden drop: HR falls at least this much...
+DROP_WINDOW_S = 20  # ...within this many seconds, with no gap in between...
+DROP_MAX_PACE_CHANGE = 0.05  # ...while pace changes by less than this fraction
+
+EPISODE_MAX_S = 300  # a spike or cadence lock followed by a sudden drop this soon, with no gap, is one episode
 
 LOCK_MAX_GAP_BPM = 3  # cadence lock: |HR - cadence| at most this...
 LOCK_MIN_S = 30  # ...for at least this long...
@@ -49,11 +57,25 @@ def export_samples(rs: dict, interval: int = SAMPLE_INTERVAL_S) -> dict:
             "elev_m": whole(rs["elev_m"])}
 
 
+def _resumed_at(hr: list, interval: int) -> list:
+    """For each bucket, the time HR data last resumed: 0 at the start, else the first bucket after a gap."""
+    out, since = [], 0
+    for i, h in enumerate(hr):
+        if h is None:
+            since = (i + 1) * interval
+        out.append(since)
+    return out
+
+
 def _spikes(rs: dict, interval: int) -> list:
     hr, pace, elev = rs["hr"], rs["pace_min_per_km"], rs["elev_m"]
+    resumed = _resumed_at(hr, interval)
     out = []
     for i in range(len(hr)):
         if hr[i] is None or pace[i] is None:
+            continue
+        start = i * interval
+        if start < SPIKE_IGNORE_START_S or (resumed[i] > 0 and start - resumed[i] < SPIKE_IGNORE_AFTER_GAP_S):
             continue
         for j in range(i + 1, min(i + SPIKE_WINDOW_S // interval, len(hr) - 1) + 1):
             if hr[j] is None or pace[j] is None or hr[j] - hr[i] < SPIKE_RISE_BPM:
@@ -91,6 +113,25 @@ def _cadence_locks(rs: dict, interval: int) -> list:
     return out
 
 
+def _drops(rs: dict, interval: int) -> list:
+    """HR falling faster than it really does at a steady pace. peak_hr is HR just before, low_hr just after."""
+    hr, pace = rs["hr"], rs["pace_min_per_km"]
+    out = []
+    for i in range(len(hr)):
+        if hr[i] is None or pace[i] is None:
+            continue
+        for j in range(i + 1, min(i + DROP_WINDOW_S // interval, len(hr) - 1) + 1):
+            if hr[j] is None:
+                break  # a gap in between: not a drop while running
+            if pace[j] is None or hr[i] - hr[j] < DROP_FALL_BPM:
+                continue
+            if abs(pace[j] - pace[i]) / pace[i] >= DROP_MAX_PACE_CHANGE:
+                continue
+            out.append({"start_s": i * interval, "end_s": (j + 1) * interval, "peak_hr": hr[i], "low_hr": hr[j],
+                        "type": "sudden_drop"})
+    return out
+
+
 def _merge(segments: list) -> list:
     """Merge overlapping segments of the same type."""
     out = []
@@ -99,11 +140,39 @@ def _merge(segments: list) -> list:
         if last and last["type"] == s["type"] and s["start_s"] <= last["end_s"]:
             last["end_s"] = max(last["end_s"], s["end_s"])
             last["peak_hr"] = max(last["peak_hr"], s["peak_hr"])
+            if "low_hr" in s:
+                last["low_hr"] = min(last["low_hr"], s["low_hr"])
         else:
             out.append(dict(s))
-    return [{**s, "peak_hr": round(s["peak_hr"])} for s in sorted(out, key=lambda s: s["start_s"])]
+    return [{**s, **{k: round(s[k]) for k in ("peak_hr", "low_hr") if k in s}}
+            for s in sorted(out, key=lambda s: (s["start_s"], s["end_s"]))]
+
+
+def _link_episodes(segments: list, hr: list, interval: int) -> list:
+    """Give a spike or cadence lock and the sudden drops that follow it within EPISODE_MAX_S, with no gap in
+    between, the same episode number. Unlinked segments get none."""
+    group = list(range(len(segments)))
+
+    def root(k):
+        while group[k] != k:
+            k = group[k]
+        return k
+
+    for a, rise in enumerate(segments):
+        if rise["type"] == "sudden_drop":
+            continue
+        for b, drop in enumerate(segments):
+            if drop["type"] != "sudden_drop" or not rise["start_s"] < drop["start_s"] <= rise["end_s"] + EPISODE_MAX_S:
+                continue
+            if None in hr[rise["start_s"] // interval:drop["end_s"] // interval]:
+                continue
+            group[root(b)] = root(a)
+    roots = [root(k) for k in range(len(segments))]
+    linked = sorted({r for r in roots if roots.count(r) > 1}, key=roots.index)
+    return [{**s, "episode": linked.index(r) + 1} if r in linked else s for s, r in zip(segments, roots)]
 
 
 def hr_anomalies(rs: dict, interval: int = SAMPLE_INTERVAL_S) -> list:
     """Segments flagged by simple rules on the resampled series. Heuristics, not diagnoses."""
-    return _merge(_spikes(rs, interval) + _cadence_locks(rs, interval))
+    found = _merge(_spikes(rs, interval) + _cadence_locks(rs, interval) + _drops(rs, interval))
+    return _link_episodes(found, rs["hr"], interval)

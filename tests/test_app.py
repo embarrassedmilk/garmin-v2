@@ -809,7 +809,8 @@ class RunSamplesTest(TempDbCase):
         s["hr"] = [150] * 200 + [169] * 60 + [150] * 140
         s["cad"] = [168] * 400
         locks = [a for a in samples.hr_anomalies(samples.resample(s)) if a["type"] == "cadence_lock_suspect"]
-        self.assertEqual(locks, [{"start_s": 200, "end_s": 260, "peak_hr": 169, "type": "cadence_lock_suspect"}])
+        # HR falling back to 150 at the end is a sudden drop, so the lock and the drop form an episode
+        self.assertEqual(locks, [{"start_s": 200, "end_s": 260, "peak_hr": 169, "type": "cadence_lock_suspect", "episode": 1}])
 
     def test_short_or_baseline_level_lock_is_not_flagged(self):
         short = steady(400, cad=168)
@@ -865,3 +866,60 @@ class RunSamplesTest(TempDbCase):
         c = db.connect()
         series = json.loads(c.execute("SELECT series FROM run_samples WHERE id = 1").fetchone()["series"])
         self.assertEqual(series, {"t": [0], "hr": [130], "cad": [None], "speed": [None], "alt": [None]})
+
+
+def with_gap(s, start, end):
+    """Drop the records from start to end (seconds), like a paused timer."""
+    keep = [i for i, t in enumerate(s["t"]) if not start <= t < end]
+    return {k: [v[i] for i in keep] for k, v in s.items()}
+
+
+def flags(s, kind=None):
+    return [a for a in samples.hr_anomalies(samples.resample(s)) if kind is None or a["type"] == kind]
+
+
+class AnomalyRefinementTest(unittest.TestCase):
+    def test_no_spike_at_the_start_of_a_run(self):
+        s = steady(400)
+        s["hr"] = [120] * 60 + [140] * 340
+        self.assertEqual(flags(s, "spike"), [])
+
+    def test_no_spike_soon_after_a_gap_but_later_ones_count(self):
+        soon = steady(600)
+        soon["hr"] = [140] * 330 + [155] * 270
+        self.assertEqual(flags(with_gap(soon, 280, 300), "spike"), [])  # rise 30 s after resuming
+        later = with_gap(soon, 200, 220)  # rise 110 s after resuming
+        self.assertEqual([a["peak_hr"] for a in flags(later, "spike")], [155])
+
+    def test_sudden_drop(self):
+        s = steady(400)
+        s["hr"] = [165] * 200 + [150] * 200
+        self.assertEqual(flags(s), [{"start_s": 180, "end_s": 220, "peak_hr": 165, "low_hr": 150, "type": "sudden_drop"}])
+
+    def test_no_drop_across_a_gap_or_when_slowing_down(self):
+        gap = steady(400)
+        gap["hr"] = [165] * 200 + [150] * 200
+        slowing = dict(gap, speed=[2.8] * 200 + [2.2] * 200)
+        self.assertEqual(flags(with_gap(gap, 195, 215), "sudden_drop"), [])
+        self.assertEqual(flags(slowing, "sudden_drop"), [])
+
+    def test_spike_and_following_drop_share_an_episode(self):
+        s = steady(900)
+        s["hr"] = [145] * 300 + [165] * 200 + [145] * 400
+        found = flags(s)
+        self.assertEqual([(a["type"], a.get("episode")) for a in found], [("spike", 1), ("sudden_drop", 1)])
+
+    def test_no_episode_across_a_gap_or_after_5_minutes(self):
+        s = steady(1200)
+        s["hr"] = [145] * 300 + [165] * 200 + [145] * 700
+        across_gap = with_gap(s, 400, 420)
+        too_late = dict(s, hr=[145] * 300 + [165] * 360 + [145] * 540)  # drop 6 minutes after the spike
+        for case in (across_gap, too_late):
+            found = flags(case)
+            self.assertEqual({a["type"] for a in found}, {"spike", "sudden_drop"})
+            self.assertFalse(any("episode" in a for a in found))
+
+    def test_episodes_are_numbered_in_order(self):
+        s = steady(2000)
+        s["hr"] = [145] * 300 + [165] * 100 + [145] * 600 + [165] * 100 + [145] * 900
+        self.assertEqual([a.get("episode") for a in flags(s)], [1, 1, 2, 2])
