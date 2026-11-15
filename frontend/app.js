@@ -77,9 +77,6 @@ document.addEventListener('click', e => {  // tap to show on touch screens, tap 
 }, true);
 addEventListener('scroll', hideTip, true);
 const RECOVERY_HELP = "Garmin's recovery time when the run ended, from an undocumented field of the activity file. It includes recovery left from earlier activities and counts down afterwards.";
-const HR_FLAG_HELP = "Which sensor measured heart rate, and how many stretches simple rules flagged as possible sensor errors. "
-    + "Likely artifact: HR jumped, or followed your step rate, and then fell faster than a real heart slows at a steady pace. "
-    + "Other flags are weaker hints. Rules, not a diagnosis: no flags doesn't prove the reading was right.";
 const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
 const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
@@ -243,10 +240,8 @@ function splitRows(r) {
     return `<section><h3>${r.split_type === 'km' ? 'Km splits' : 'Laps'}</h3><p>Km is where each split ends. Elevation comes from the barometer and isn't corrected.</p>${graphs}<div class="wrap"><table><thead><tr><th>Km</th><th>Pace</th><th>Avg HR</th><th>Gain (m)</th><th>Loss (m)</th><th>Cadence</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
-const HR_SOURCE = { wrist: 'Wrist', chest_strap: 'Chest strap', external: 'External sensor' };
 const FLAG_NAME = { spike: 'Sudden rise', cadence_lock_suspect: 'Possible cadence lock', sudden_drop: 'Sudden drop' };
 const elapsed = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}` };
-const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 
 // Flags grouped for display: each episode is one likely artifact; a drop on its own is too, other lone flags are weaker hints
 function hrFlagGroups(flags) {
@@ -260,14 +255,6 @@ function hrFlagGroups(flags) {
         } else groups.push({ likely: f.type === 'sudden_drop', start: f.start_s, end: f.end_s, peak: f.peak_hr, low: f.low_hr, types: [f.type] });
     }
     return groups.sort((a, b) => a.start - b.start);
-}
-
-function hrSensorTile(r, flags) {
-    const src = HR_SOURCE[r.hr_source] || 'Unknown sensor';
-    if (!flags) return src;
-    const groups = hrFlagGroups(flags), likely = groups.filter(g => g.likely).length, other = groups.length - likely;
-    const note = [likely && plural(likely, 'likely artifact'), other && plural(other, 'other flag')].filter(Boolean).join(', ') || 'No flags';
-    return `${src}<span class="note${likely ? ' warn' : ''}">${note}</span>`;
 }
 
 function hrTimeSection(data) {
@@ -297,7 +284,8 @@ function drawHrTime(data) {
             const x0 = Math.max(x.getPixelForValue(g.start / 60), a.left), x1 = Math.min(x.getPixelForValue(g.end / 60), a.right);
             if (x1 <= x0) continue;
             ctx.globalAlpha = g.likely ? .22 : .1; ctx.fillStyle = warn; ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
-            if (g.episode) { ctx.globalAlpha = 1; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(g.episode, (x0 + x1) / 2, a.top + 11) }
+            // the number goes just above the plot, where no line can run through it
+            if (g.episode) { ctx.globalAlpha = 1; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(g.episode, (x0 + x1) / 2, a.top - 2) }
         }
         ctx.restore();
     } };
@@ -307,6 +295,7 @@ function drawHrTime(data) {
             ds('Pace', 'pace_min_per_km', '--deep', 'y2', { borderWidth: 1, data: pts('pace_min_per_km').map(p => p.y > slowest ? { ...p, y: null } : p) })] },
         options: {
             maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+            layout: { padding: { top: groups.some(g => g.episode) ? 14 : 0 } },  // room for the episode numbers
             scales: {
                 x: { type: 'linear', min: 0, max: mins.at(-1), ticks: { includeBounds: false }, title: { display: true, text: 'minutes' } },
                 y: { title: { display: true, text: 'bpm' } },
@@ -448,8 +437,7 @@ async function openRun(a) {
     const tiles = [
         ['Distance', a.distance_m && num(km, 2) + ' km'], ['Time', a.duration_s && hm(a.duration_s)],
         ['Average pace', km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km'], ['Grade-adjusted pace', r.avg_gap_min_per_km && pace(r.avg_gap_min_per_km) + ' /km'],
-        ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm' + (maxFlagged ? '<span class="note warn">In a flagged stretch</span>' : '')],
-        [`Heart rate sensor${info(HR_FLAG_HELP)}`, hrSensorTile(r, hr.hr_anomalies)],
+        ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm' + (maxFlagged ? '<span class="note warn">May be a sensor glitch: see Heart rate over time</span>' : '')],
         [r.hr_drift_basis === 'gap' ? 'HR drift' : 'HR drift (not grade-adjusted)', r.hr_drift_pct != null && `${r.hr_drift_pct > 0 ? '+' : ''}${r.hr_drift_pct}%`],
         ['Cadence', r.avg_cadence_spm && r.avg_cadence_spm + ' spm'], ['Stride', r.avg_stride_length_m && r.avg_stride_length_m + ' m'],
         [`Vertical oscillation${info(VO_HELP)}`, r.avg_vertical_oscillation_cm != null && num(r.avg_vertical_oscillation_cm, 1) + ' cm'],
