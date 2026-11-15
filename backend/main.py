@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import db
-from .export import build_export, run_fields
+from .export import build_export, run_fields, sample_fields
 from .samples import SAMPLE_DAYS
 from .sync import run_sync
 
@@ -43,6 +43,14 @@ def route(activity_id: int):
     with db.connect() as c:
         row = c.execute("SELECT points FROM run_routes WHERE id=?", (activity_id,)).fetchone()
     return {"points": json.loads(row["points"]) if row else []}
+
+
+@app.get("/api/activities/{activity_id}/samples")
+def run_samples(activity_id: int):
+    """A run's 10-second samples and HR anomaly flags, as in the export. Nulls until a sync has stored the samples."""
+    with db.connect() as c:
+        row = c.execute("SELECT series FROM run_samples WHERE id=?", (activity_id,)).fetchone()
+    return {"samples": None, "hr_anomalies": None, **(sample_fields(row["series"], True) if row else {})}
 
 
 @app.get("/api/body-battery/{day}")

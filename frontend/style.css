@@ -645,6 +645,29 @@ dialog::backdrop {
     font-weight: 600
 }
 
+.tiles .note {
+    display: block;
+    color: var(--mute);
+    font-size: .85rem;
+    font-weight: 400
+}
+
+.tiles .note.warn,
+.flags li.likely b {
+    color: var(--warn)
+}
+
+.chart.tall {
+    height: 280px
+}
+
+.flags {
+    margin: 12px 0 0;
+    padding-left: 18px;
+    font-size: .9rem;
+    line-height: 1.6
+}
+
 .zone {
     display: grid;
     grid-template-columns: 110px 1fr 110px;
@@ -893,6 +916,10 @@ section h4 {
 
     .chart {
         height: 200px
+    }
+
+    .chart.tall {
+        height: 240px
     }
 
     .tabs {

@@ -198,7 +198,7 @@ def _run_stats(runs: list) -> dict:
     }
 
 
-def _sample_fields(series, recent: bool) -> dict:
+def sample_fields(series, recent: bool) -> dict:
     """hr_anomalies for every run with stored samples; the samples themselves only for recent runs."""
     if not series:
         return {}
@@ -242,7 +242,7 @@ def build_export(days: int = 28, sample_days: int = samples.SAMPLE_DAYS) -> dict
         "distance_km": _r(a["distance_m"] and a["distance_m"] / 1000, 1), "avg_hr": a["avg_hr"], "max_hr": a["max_hr"],
         "aerobic_te": _r(a["te_aerobic"]), "anaerobic_te": _r(a["te_anaerobic"]), "training_load": _r(a["training_load"], 0),
         **(run_fields(a) if a["type"] in db.RUN_SUBTYPES else {}),
-        **(_sample_fields(series.get(a["id"]), a["start_local"][:10] >= samples_from) if a["type"] in db.RUN_SUBTYPES else {}),
+        **(sample_fields(series.get(a["id"]), a["start_local"][:10] >= samples_from) if a["type"] in db.RUN_SUBTYPES else {}),
     } for a in acts]  # names omitted on purpose: they can contain place names
 
     done = [d for d in daily if not d["partial"]]

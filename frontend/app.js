@@ -77,6 +77,9 @@ document.addEventListener('click', e => {  // tap to show on touch screens, tap 
 }, true);
 addEventListener('scroll', hideTip, true);
 const RECOVERY_HELP = "Garmin's recovery time when the run ended, from an undocumented field of the activity file. It includes recovery left from earlier activities and counts down afterwards.";
+const HR_FLAG_HELP = "Which sensor measured heart rate, and how many stretches simple rules flagged as possible sensor errors. "
+    + "Likely artifact: HR jumped, or followed your step rate, and then fell faster than a real heart slows at a steady pace. "
+    + "Other flags are weaker hints. Rules, not a diagnosis: no flags doesn't prove the reading was right.";
 const VO_HELP = 'Vertical oscillation: how far your torso moves up and down with each step. Less bounce usually means less wasted energy.';
 const typeLabel = t => { if (t === 'hiit') return 'HIIT'; const s = t.replaceAll('_', ' '); return s[0].toUpperCase() + s.slice(1) };
 
@@ -240,6 +243,87 @@ function splitRows(r) {
     return `<section><h3>${r.split_type === 'km' ? 'Km splits' : 'Laps'}</h3><p>Km is where each split ends. Elevation comes from the barometer and isn't corrected.</p>${graphs}<div class="wrap"><table><thead><tr><th>Km</th><th>Pace</th><th>Avg HR</th><th>Gain (m)</th><th>Loss (m)</th><th>Cadence</th></tr></thead><tbody>${body}</tbody></table></div></section>`;
 }
 
+const HR_SOURCE = { wrist: 'Wrist', chest_strap: 'Chest strap', external: 'External sensor' };
+const FLAG_NAME = { spike: 'Sudden rise', cadence_lock_suspect: 'Possible cadence lock', sudden_drop: 'Sudden drop' };
+const elapsed = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}` };
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+// Flags grouped for display: each episode is one likely artifact; a drop on its own is too, other lone flags are weaker hints
+function hrFlagGroups(flags) {
+    const groups = [], byEpisode = {};
+    for (const f of flags) {
+        if (f.episode) {
+            const g = byEpisode[f.episode] ??= (groups.push({ likely: true, episode: f.episode, start: f.start_s, end: f.end_s, peak: f.peak_hr, types: [] }), groups.at(-1));
+            g.start = Math.min(g.start, f.start_s); g.end = Math.max(g.end, f.end_s); g.peak = Math.max(g.peak, f.peak_hr);
+            if (f.low_hr != null) g.low = Math.min(g.low ?? f.low_hr, f.low_hr);
+            g.types.push(f.type);
+        } else groups.push({ likely: f.type === 'sudden_drop', start: f.start_s, end: f.end_s, peak: f.peak_hr, low: f.low_hr, types: [f.type] });
+    }
+    return groups.sort((a, b) => a.start - b.start);
+}
+
+function hrSensorTile(r, flags) {
+    const src = HR_SOURCE[r.hr_source] || 'Unknown sensor';
+    if (!flags) return src;
+    const groups = hrFlagGroups(flags), likely = groups.filter(g => g.likely).length, other = groups.length - likely;
+    const note = [likely && plural(likely, 'likely artifact'), other && plural(other, 'other flag')].filter(Boolean).join(', ') || 'No flags';
+    return `${src}<span class="note${likely ? ' warn' : ''}">${note}</span>`;
+}
+
+function hrTimeSection(data) {
+    if (!data.samples) return '<section><h3>Heart rate over time</h3><p>Not stored for this run yet: the next sync adds it.</p></section>';
+    const items = hrFlagGroups(data.hr_anomalies || []).map(g => {
+        const what = g.episode ? `Likely artifact ${g.episode}` : g.likely ? 'Likely artifact' : FLAG_NAME[g.types[0]];
+        const hr = g.low != null ? `${g.peak} → ${g.low} bpm` : `up to ${g.peak} bpm`;
+        const how = g.episode ? ` (${[...new Set(g.types)].map(t => FLAG_NAME[t].toLowerCase()).join(', ')})` : '';
+        return `<li class="${g.likely ? 'likely' : ''}"><b>${what}</b> ${elapsed(g.start)}–${elapsed(g.end)} · ${hr}${how}</li>`;
+    }).join('');
+    return `<section><h3>Heart rate over time</h3><p>10-second averages; breaks are pauses. Shaded stretches were flagged as possible sensor errors,
+        darker ones with a number as likely artifacts. Turn on Cadence: when HR sits on the cadence line, the sensor may be counting your steps.</p>
+        <div class="chart tall"><canvas id="run-time"></canvas></div>${items ? `<ul class="flags">${items}</ul>` : '<p>No stretches flagged.</p>'}</section>`;
+}
+
+function drawHrTime(data) {
+    const S = data.samples, groups = hrFlagGroups(data.hr_anomalies || []), mins = S.t_s.map(t => t / 60);
+    const pts = key => S[key].map((y, i) => ({ x: mins[i], y }));
+    const paces = S.pace_min_per_km.filter(p => p != null).sort((a, b) => a - b);
+    const slowest = paces.length ? Math.min(paces.at(-1), paces[Math.floor(paces.length * .95)] + 1.5) : undefined;  // standing still would squash the line
+    const ds = (label, key, c, axis, extra) => ({ label, data: pts(key), borderColor: css(c), backgroundColor: css(c), borderWidth: 1.5, pointRadius: 0, spanGaps: false, yAxisID: axis, ...extra });
+    const flagsAt = x => groups.filter(g => x * 60 >= g.start && x * 60 < g.end);
+    const bands = { id: 'flagBands', beforeDatasetsDraw(c) {
+        const { ctx, chartArea: a, scales: { x } } = c, warn = css('--warn');
+        ctx.save();
+        for (const g of groups) {
+            const x0 = Math.max(x.getPixelForValue(g.start / 60), a.left), x1 = Math.min(x.getPixelForValue(g.end / 60), a.right);
+            if (x1 <= x0) continue;
+            ctx.globalAlpha = g.likely ? .22 : .1; ctx.fillStyle = warn; ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
+            if (g.episode) { ctx.globalAlpha = 1; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(g.episode, (x0 + x1) / 2, a.top + 11) }
+        }
+        ctx.restore();
+    } };
+    popCharts.push(new Chart($('#run-time'), {
+        type: 'line', plugins: [bands],
+        data: { datasets: [ds('Heart rate', 'hr', '--heart', 'y'), ds('Cadence', 'cadence_spm', '--steps', 'y', { hidden: true }),
+            ds('Pace', 'pace_min_per_km', '--deep', 'y2', { borderWidth: 1, data: pts('pace_min_per_km').map(p => p.y > slowest ? { ...p, y: null } : p) })] },
+        options: {
+            maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { type: 'linear', min: 0, max: mins.at(-1), ticks: { includeBounds: false }, title: { display: true, text: 'minutes' } },
+                y: { title: { display: true, text: 'bpm' } },
+                y2: { position: 'right', reverse: true, max: slowest, grid: { drawOnChartArea: false }, ticks: { callback: pace }, title: { display: true, text: 'min/km' } },
+            },
+            plugins: {
+                legend: { labels: { boxWidth: 12, boxHeight: 2 } },
+                tooltip: { callbacks: {
+                    title: items => elapsed(Math.round(items[0].parsed.x * 60)),
+                    label: c => c.parsed.y == null ? null : `${c.dataset.label}: ${c.dataset.yAxisID === 'y2' ? pace(c.parsed.y) + ' /km' : c.parsed.y + (c.datasetIndex ? ' spm' : ' bpm')}`,
+                    footer: items => flagsAt(items[0]?.parsed.x).map(g => g.episode ? `Likely artifact ${g.episode}` : g.likely ? 'Likely artifact' : FLAG_NAME[g.types[0]]).join(', '),
+                } },
+            },
+        },
+    }));
+}
+
 function showPopup(title, sub, body) {
     const dlg = $('#pop');
     popCharts.forEach(c => c.destroy()); popCharts = [];  // when switching nights without closing
@@ -354,14 +438,18 @@ function drawRoute(points) {
 }
 
 async function openRun(a) {
-    const { points } = await api(`/api/activities/${a.id}/route`);
+    const [{ points }, hr] = await Promise.all([api(`/api/activities/${a.id}/route`),
+        api(`/api/activities/${a.id}/samples`).catch(() => ({ samples: null, hr_anomalies: null }))]);
     const hasMap = points.length > 1 && window.L;  // no GPS (treadmill), not synced yet, or Leaflet didn't load
     const map = hasMap ? '<section><h3>Route</h3><div id="run-map" class="map"></div></section>' : '';
-    const r = a.run, km = a.distance_m / 1000;
+    const r = a.run, km = a.distance_m / 1000, S = hr.samples;
+    // 10-second averages run a little below the watch's max, hence the 3 bpm allowance
+    const maxFlagged = S && a.max_hr && (hr.hr_anomalies || []).some(f => S.t_s.some((t, i) => t >= f.start_s && t < f.end_s && S.hr[i] >= a.max_hr - 3));
     const tiles = [
         ['Distance', a.distance_m && num(km, 2) + ' km'], ['Time', a.duration_s && hm(a.duration_s)],
         ['Average pace', km && a.duration_s && pace(a.duration_s / 60 / km) + ' /km'], ['Grade-adjusted pace', r.avg_gap_min_per_km && pace(r.avg_gap_min_per_km) + ' /km'],
-        ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm'],
+        ['Average HR', a.avg_hr && num(a.avg_hr) + ' bpm'], ['Max HR', a.max_hr && num(a.max_hr) + ' bpm' + (maxFlagged ? '<span class="note warn">In a flagged stretch</span>' : '')],
+        [`Heart rate sensor${info(HR_FLAG_HELP)}`, hrSensorTile(r, hr.hr_anomalies)],
         [r.hr_drift_basis === 'gap' ? 'HR drift' : 'HR drift (not grade-adjusted)', r.hr_drift_pct != null && `${r.hr_drift_pct > 0 ? '+' : ''}${r.hr_drift_pct}%`],
         ['Cadence', r.avg_cadence_spm && r.avg_cadence_spm + ' spm'], ['Stride', r.avg_stride_length_m && r.avg_stride_length_m + ' m'],
         [`Vertical oscillation${info(VO_HELP)}`, r.avg_vertical_oscillation_cm != null && num(r.avg_vertical_oscillation_cm, 1) + ' cm'],
@@ -370,8 +458,9 @@ async function openRun(a) {
         ['Aerobic / anaerobic', a.te_aerobic != null && `${num(a.te_aerobic, 1)} / ${num(a.te_anaerobic, 1)}`], ['Training load', a.training_load != null && num(a.training_load)],
         [`Recovery at finish${info(RECOVERY_HELP)}`, r.recovery_hours_at_finish != null && num(r.recovery_hours_at_finish) + ' h'],
     ].filter(t => t[1]).map(([k, v]) => `<div><small>${k}</small><b>${v}</b></div>`).join('');
-    showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${map}${zoneRows(r)}${splitRows(r)}`);
+    showPopup(esc(a.name || a.type), `${day(a.start_local.slice(0, 10))}, ${a.start_local.slice(11, 16)}`, `<div class="tiles">${tiles}</div>${map}${r.splits ? hrTimeSection(hr) : ''}${zoneRows(r)}${splitRows(r)}`);
     if (hasMap) drawRoute(points);
+    if (S && $('#run-time')) drawHrTime(hr);
     if (!$('#run-pace')) return;
     const opt = (extra = {}) => ({ maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { display: false }, tooltip: extra.tooltip }, scales: { x: { title: { display: true, text: 'km' } }, y: extra.y || {} } });
     const line = (id, key, c, extra) => popCharts.push(new Chart($('#' + id), { type: 'line', data: { labels: r.splits.map(s => s.km), datasets: [{ data: r.splits.map(s => s[key]), borderColor: css(c), backgroundColor: css(c), borderWidth: 2, pointRadius: 3, tension: .25, spanGaps: true }] }, options: opt(extra) }));

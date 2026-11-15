@@ -878,7 +878,7 @@ def flags(s, kind=None):
     return [a for a in samples.hr_anomalies(samples.resample(s)) if kind is None or a["type"] == kind]
 
 
-class AnomalyRefinementTest(unittest.TestCase):
+class AnomalyRefinementTest(TempDbCase):
     def test_no_spike_at_the_start_of_a_run(self):
         s = steady(400)
         s["hr"] = [120] * 60 + [140] * 340
@@ -923,3 +923,16 @@ class AnomalyRefinementTest(unittest.TestCase):
         s = steady(2000)
         s["hr"] = [145] * 300 + [165] * 100 + [145] * 600 + [165] * 100 + [145] * 900
         self.assertEqual([a.get("episode") for a in flags(s)], [1, 1, 2, 2])
+
+    def test_samples_endpoint(self):
+        api = TestClient(app)
+        self.assertEqual(api.get("/api/activities/1/samples").json(), {"samples": None, "hr_anomalies": None})
+        s = steady(400)
+        s["hr"] = [165] * 200 + [150] * 200
+        c = db.connect()
+        db.upsert(c, "run_samples", "id", {"id": 1, "series": json.dumps(s)})
+        c.commit()
+        c.close()
+        body = api.get("/api/activities/1/samples").json()
+        self.assertEqual(body["samples"]["t_s"][:3], [0, 10, 20])
+        self.assertEqual([f["type"] for f in body["hr_anomalies"]], ["sudden_drop"])
