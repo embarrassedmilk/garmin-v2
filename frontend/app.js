@@ -285,7 +285,7 @@ function drawHrTime(data) {
             if (x1 <= x0) continue;
             ctx.globalAlpha = g.likely ? .22 : .1; ctx.fillStyle = warn; ctx.fillRect(x0, a.top, x1 - x0, a.bottom - a.top);
             // the number goes just above the plot, where no line can run through it
-            if (g.episode) { ctx.globalAlpha = 1; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(g.episode, (x0 + x1) / 2, a.top - 2) }
+            if (g.episode) { ctx.globalAlpha = 1; ctx.font = `600 11px ${Chart.defaults.font.family}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(g.episode, (x0 + x1) / 2, a.top - 2) }
         }
         ctx.restore();
     } };
@@ -295,14 +295,14 @@ function drawHrTime(data) {
             ds('Pace', 'pace_min_per_km', '--deep', 'y2', { borderWidth: 1, data: pts('pace_min_per_km').map(p => p.y > slowest ? { ...p, y: null } : p) })] },
         options: {
             maintainAspectRatio: false, animation: false, interaction: { mode: 'index', intersect: false },
-            layout: { padding: { top: groups.some(g => g.episode) ? 14 : 0 } },  // room for the episode numbers
+            layout: { padding: { top: groups.some(g => g.episode) ? 16 : 0 } },  // room for the episode numbers
             scales: {
                 x: { type: 'linear', min: 0, max: mins.at(-1), ticks: { includeBounds: false }, title: { display: true, text: 'minutes' } },
                 y: { title: { display: true, text: 'bpm' } },
                 y2: { position: 'right', reverse: true, max: slowest, grid: { drawOnChartArea: false }, ticks: { callback: pace }, title: { display: true, text: 'min/km' } },
             },
             plugins: {
-                legend: { labels: { boxWidth: 12, boxHeight: 2 } },
+                legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 2 } },  // below, so the episode numbers have the top to themselves
                 tooltip: { callbacks: {
                     title: items => elapsed(Math.round(items[0].parsed.x * 60)),
                     label: c => c.parsed.y == null ? null : `${c.dataset.label}: ${c.dataset.yAxisID === 'y2' ? pace(c.parsed.y) + ' /km' : c.parsed.y + (c.datasetIndex ? ' spm' : ' bpm')}`,
